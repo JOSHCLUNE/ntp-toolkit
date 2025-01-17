@@ -43,29 +43,36 @@ lean_exe premises where
 @[default_target]
 lean_exe training_data_with_premises where
   root := `scripts.training_data_with_premises
+  supportInterpreter := true
 
 @[default_target]
 lean_exe tactic_benchmark where
   root := `scripts.tactic_benchmark
+  supportInterpreter := true
 
 @[default_target]
 lean_exe add_imports where
   root := `scripts.add_imports
+  supportInterpreter := true
 
 lean_exe all_modules where
   root := `scripts.all_modules
+  supportInterpreter := true
 
 @[default_target]
 lean_exe declarations where
   root := `scripts.declarations
+  supportInterpreter := true
 
 @[default_target]
 lean_exe imports where
   root := `scripts.imports
+  supportInterpreter := true
 
 @[default_target]
 lean_exe update_hammer_blacklist where
   root := `scripts.update_hammer_blacklist
+  supportInterpreter := true
 """ % (name, repo, commit)
     with open(os.path.join(cwd, 'lakefile.lean'), 'w') as f:
         f.write(contents)
@@ -162,7 +169,7 @@ if __name__ == '__main__':
         '--add_imports',
         action='store_true'
     )
-    parser.add_argument(    
+    parser.add_argument(
         '--declarations',
         action='store_true'
     )

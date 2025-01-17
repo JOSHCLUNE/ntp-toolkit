@@ -555,33 +555,39 @@ def querySMTBenchmarkFromModule (module : ModuleName) : IO UInt32 := do
 
 def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
   let module := args.positionalArg! "module" |>.as! ModuleName
-  let tac ←
-    if args.hasFlag "duper" then pure useDuper else
-    if args.hasFlag "querySMT" then pure useQuerySMT else
-    if args.hasFlag "aesop" then pure useAesop else
-    if args.hasFlag "exact" then pure useExact? else
-    if args.hasFlag "rfl" then pure useRfl else
-    if args.hasFlag "simp_all" then pure useSimpAll else
-    if args.hasFlag "omega" then pure useOmega else
-    throw <| IO.userError "Specify a tactic, e.g. `--aesop`"
-  tacticBenchmarkFromModule module tac
+  let declName := args.positionalArg! "declName" |>.as! String |>.toName
+  let premisesPath := args.positionalArg! "premisesPath" |>.as! String
+  let benchmarkType := args.positionalArg! "benchmarkType" |>.as! String
+
+  try
+    match benchmarkType with
+      | "duper" => tacticBenchmarkAtDecl module declName useDuper
+      | "querySMT" => tacticBenchmarkAtDecl module declName useQuerySMT
+      | "aesop" => tacticBenchmarkAtDecl module declName useAesop
+      | "exact" => tacticBenchmarkAtDecl module declName useExact?
+      | "rfl" => tacticBenchmarkAtDecl module declName useRfl
+      | "simp_all" => tacticBenchmarkAtDecl module declName useSimpAll
+      | "omega" => tacticBenchmarkAtDecl module declName useOmega
+
+      | "simp_all_with_premises" => simpAllBenchmarkAtDecl module declName "Examples/Mathlib/WithImports" premisesPath
+      | "hammer" => hammerBenchmarkAtDecl module declName "Examples/Mathlib/WithImports" premisesPath 10
+      | "hammer_without_simp_preprocessing" => hammerBenchmarkAtDecl module declName "Examples/Mathlib/WithImports" premisesPath 10 false
+
+      | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
+  catch e =>
+    IO.eprintln s!"{benchmarkType} failed with error {e}"
+    return (1 : UInt32)
 
 /-- Setting up command line options and help text for `lake exe tactic_benchmark`. -/
 def tactic_benchmark : Cmd := `[Cli|
   tactic_benchmark VIA tacticBenchmarkMain; ["0.0.1"]
   "Run a customisable tactic at all declarations in a file."
 
-  FLAGS:
-    "aesop";       "Use `aesop`."
-    "exact";       "Use `exact?`."
-    "rfl";         "Use `intros; rfl`."
-    "simp_all";    "Use `intros; simp_all`."
-    "omega";       "Use `intros; omega`."
-    "duper";       "Use `duper [*]`."
-    "querySMT";    "Use `querySMT`."
-
   ARGS:
-    module : ModuleName; "Lean module to compile and export InfoTrees."
+    module : ModuleName; "Lean module to run the tactic on."
+    declName : String; "Name of the declaration to run the tactic on."
+    premisesPath : String; "Path to the premises, such as Examples/Mathlib/TrainingDataWithPremises."
+    benchmarkType : String; "Which type of tactic to run (e.g. hammer, aesop, exact)."
 ]
 
 /-- `lake exe tactic_benchmark` -/
