@@ -1,5 +1,10 @@
-import QuerySMT
-import Aesop
+import Smt
+import Smt.Real
+import Smt.Auto
+
+set_option auto.native true
+open Lean in @[rebind Auto.Native.solverFunc]
+def solverFunc : Array Auto.Lemma → Array Auto.Lemma → MetaM Expr := Smt.smtSolverFunc
 
 def p := True
 def q := True
@@ -30,7 +35,7 @@ theorem test3 (α : Type _) (x : α) : x = x := by rfl
 theorem test4 (α : Type) (x : α) : x = x := by rfl
 
 theorem test5 (α : Type) (f : α → Prop) (hf : ∀ x : α, f x = True) (x : α) : f x := by
-  duper [*] {portfolioInstance := 7}
+  auto [*]
 
 theorem zero_eq_zero : 0 = 0 := by omega
 
@@ -46,7 +51,7 @@ theorem querySMTTest (x y z : Int) : x ≤ y → y ≤ z → x ≤ z := by
   have smtLemma3 :
     (x + -Int.ofNat 1 * y ≥ Int.ofNat 1 ∨ y + -Int.ofNat 1 * z ≥ Int.ofNat 1) ∨ ¬x + -Int.ofNat 1 * z ≥ Int.ofNat 1 :=
     by simp; omega
-  duper [h0, h1, negGoal, smtLemma0, smtLemma1, smtLemma2, smtLemma3] {portfolioInstance := 7}
+  auto [*]
 
 theorem skolemizationTest1 (α : Type) [Inhabited α] (p : Prop) (f : α → Prop) (h : p ∨ ∃ x : α, f x) : p ∨ ∃ x : α, f x := by
   exact h -- `skolemizeAll` can succeed because `α` is known to be inhabited
@@ -67,3 +72,13 @@ theorem termProof3 (p q : Prop) (h : p → q) (hp : p) : q := h hp
 theorem termProof4 (b : Prop) (h : a → b) : a → b := h
 
 end TermProofs
+
+theorem smttest1 [Nonempty U] {f : U → U → U} {a b c d : U}
+  (h0 : a = b) (h1 : c = d) (h2 : p1 ∧ True) (h3 : (¬ p1) ∨ (p2 ∧ p3))
+  (h4 : (¬ p3) ∨ (¬ (f a c = f b d))) : False := by
+  auto [h0, h1, h2, h3, h4]
+
+theorem smttest2 : ∀ x : Int, ∃ y : Int, x ≤ y := by
+  intro x
+  apply Exists.intro (x + 1)
+  simp

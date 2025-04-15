@@ -5,16 +5,15 @@ package «lean-training-data» {
   -- add any package configuration options here
 }
 
-require mathlib from git
-  "https://github.com/leanprover-community/mathlib4.git" @ "a6276f4c6097675b1cf5ebd49b1146b735f38c02"
-
 require leanPremiseSelection from git
   "https://github.com/JOSHCLUNE/lean-premise-selection.git" @ "0076d43fad5969b7087603e6216b2178a90a7512"
 
-require QuerySMT from git
-  "https://github.com/JOSHCLUNE/LeanSMTParser.git" @ "eeef5e95a9851736f279ae0680c981f2c527ca60"
+require smt from git "https://github.com/JOSHCLUNE/lean-smt.git" @ "main"
 
 require «doc-gen4» from git "https://github.com/leanprover/doc-gen4" @ "v4.16.0"
+
+require mathlib from git
+  "https://github.com/leanprover-community/mathlib4.git" @ "a6276f4c6097675b1cf5ebd49b1146b735f38c02"
 
 @[default_target]
 lean_lib TrainingData where
