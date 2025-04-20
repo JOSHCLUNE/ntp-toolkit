@@ -282,7 +282,7 @@ def listModules : List Name := [
 
 def natModules : List Name := [
   /-
-`Mathlib.Data.Nat.BinaryRec,
+  `Mathlib.Data.Nat.BinaryRec,
   `Mathlib.Data.Nat.BitIndices,
   `Mathlib.Data.Nat.Bits,
   `Mathlib.Data.Nat.Bitwise,
@@ -433,25 +433,23 @@ def nameToJson (n mod : Name) : IO (Option Json) := do
 
   return some json
 
-def storeNames (ns : Array (Name × Name)) (fname : String) : IO Unit := do
+def storeNames (ns : Array (Name × Name)) (dirName : String) : IO Unit := do
   let json ← ns.filterMapM (fun n => nameToJson n.1 n.2)
-  /-
-  let json := json.take 512
-  if json.size < 512 then
-    IO.println s!"Not enough names for {fname}"
-  -/
-  IO.println "Done!"
   -- IO.println s!"json.size: {json.size}"
-  let fd ← IO.FS.Handle.mk fname .write
-  fd.putStr (Json.pretty (Json.arr json))
+  IO.println "Done computing jsons"
+  for jsonEntry in json do
+    let declName ← IO.ofExcept $ jsonEntry.getObjVal? "decl_name"
+    let declName ← IO.ofExcept $ declName.getStr?
+    let declNameInDir := dirName ++ s!"{declName}" ++ ".json"
+    let fd ← IO.FS.Handle.mk declNameInDir .write
+    fd.putStr (Json.pretty jsonEntry)
+  IO.println "Done recording results"
 
+/-
 #eval @id (CoreM _) do
   let all ← Name.getConstsOfModules natModules
   let all ← all.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
-  storeNames all s!"NatNamesPart3.json"
+  storeNames all s!"NatNamesPart3/"
   -- let n := 900
   -- storeNames (← Array.randPick all n) s!"ListNames{n}.json"
-
-/-
-"gt_hints": {"Prime.dvd_or_dvd": "notInSimpAll", "Multiset.induction_on": "notInSimpAll", "Multiset.mem_cons_of_mem": "notInSimpAll", "Multiset.prod_cons": "notInSimpAll", "Multiset.mem_cons_self": "notInSimpAll", "Prime.not_dvd_one": "notInSimpAll"}}
 -/
