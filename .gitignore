@@ -2,7 +2,9 @@
 .lake
 *.tar.gz
 out/
-Examples
+instructions/
+Examples*/
+reservoir-index/
 Extracted
 .vscode
 *.olean
@@ -11,3 +13,4 @@ Extracted
 .idea
 .DS_Store
 *.pyc
+/temp.lean

@@ -49,13 +49,14 @@ def stateComment (state: List String) (column: Nat) :=
     ++ ("-/".indent column)
 
 def stateComments (args : Cli.Parsed) : IO UInt32 := do
-    searchPathRef.set compile_time_search_path%
+    unsafe enableInitializersExecution
+    initSearchPath (← findSysroot)
     let module := args.positionalArg! "module" |>.as! ModuleName
     let mut trees ← moduleInfoTrees module
-    trees := trees.bind InfoTree.retainTacticInfo
-    trees := trees.bind InfoTree.retainOriginal
-    trees := trees.bind InfoTree.retainSubstantive
-    let L₁ ← (trees.bind InfoTree.tactics).mapM TacticInvocation.rangeAndStates
+    trees := trees.flatMap InfoTree.retainTacticInfo
+    trees := trees.flatMap InfoTree.retainOriginal
+    trees := trees.flatMap InfoTree.retainSubstantive
+    let L₁ ← (trees.flatMap InfoTree.tactics).mapM TacticInvocation.rangeAndStates
     let L₂ := dropEnclosed L₁ |>.filter fun ⟨⟨⟨l₁, _⟩, ⟨l₂, _⟩⟩, _, _⟩  => l₁ = l₂
     let L₃ := (L₂.map fun ⟨r, sb, sa⟩ => (r, formatState sb, formatState sa))
     let mut src := (← moduleSource module).splitOn "\n"
@@ -65,11 +66,11 @@ def stateComments (args : Cli.Parsed) : IO UInt32 := do
       let ⟨⟨⟨l, c⟩, _⟩, sb, sa⟩ := item
       let c := if args.hasFlag "indent" then c else 0
       if sa.contains "🎉 no goals" then
-        src := src.insertNth l $ stateComment sa c
+        src := src.insertIdx l $ stateComment sa c
       if inserted.contains (l-1) then
         src := src.set (l-1) $ stateComment sb c
       else
-        src := src.insertNth (l-1) $ stateComment sb c
+        src := src.insertIdx (l-1) $ stateComment sb c
         inserted := inserted.insert (l-1)
 
     let out := ("\n".intercalate src)

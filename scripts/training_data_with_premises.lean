@@ -5,6 +5,7 @@ import TrainingData.Utils.Range
 import TrainingData.Utils.HammerBlacklist
 import TrainingData.Utils.SimpAllHint
 import TrainingData.Utils.TheoremPrettyPrinting
+import TrainingData.Utils.WithImports
 import Mathlib.Data.String.Defs
 import Mathlib.Lean.CoreM
 import Batteries.Data.String.Basic
@@ -25,7 +26,7 @@ def addToMap (map : DeclIdMap) (declId : String) (jsonObj : Json) : DeclIdMap :=
   | none => map.insert declId [jsonObj]
 
 def groupByDecl (idJsons : List (String × Json)) : IO DeclIdMap := do
-  let mut map : DeclIdMap := Std.HashMap.empty
+  let mut map : DeclIdMap := (∅ : Std.HashMap _ _)
   for ⟨declId, json⟩ in idJsons do
     map := addToMap map declId json
   return map
@@ -43,7 +44,7 @@ def generateRandomHash (length : Nat := 15): IO String := do
   let chars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".toList
   let mut hash := ""
   for _ in List.range length do
-    hash := hash ++ (chars.get! (← IO.rand 1 (chars.length-1))).toString
+    hash := hash ++ (chars[← IO.rand 1 (chars.length-1)]!).toString
   return hash
 
 def findCommandInfo (t : InfoTree) : List (CommandInfo × ContextInfo) :=
@@ -87,6 +88,9 @@ def getInvocationTrees (trees : List InfoTree) : IO (List InfoTree) := do
   return trees
 
 namespace Lean.Elab.TacticInvocation
+
+/-- A variable that, when set to true, disables some of the changes that were made to improve performance. -/
+def useNaiveDataExtraction := false
 
 def tacticPP (module : ModuleName) (i: TacticInvocation) : IO String := do
   return (Substring.mk (← moduleSource module)
@@ -146,7 +150,7 @@ partial def syntaxPremises (lctx : LocalContext) (s : Syntax) : MetaM (NameSet �
 
 def Name.isTheoremOrAxiom (name : Name) : CoreM Bool := do
   let .some ci := (← getEnv).find? name
-    | throwError "Name.isTheorem :: Cannot find name {name}"
+    | return false
   match ci with
   | .thmInfo _ => return true
   | .axiomInfo _ => return true
@@ -211,6 +215,7 @@ def mergeHammerRecommendations (hammerRecommendation1 hammerRecommendation2 : St
     simprocs, though it may make sense to update this to include output pertaining to simprocs in the future. `simpLemmasFromTacticStx` ignores all
     lemmas that appear in the hammer blacklist. -/
 def simpLemmasFromTacticStx (s : Syntax) : MetaM (Std.HashMap Name SimpAllHint) := do
+  if useNaiveDataExtraction then return ∅ -- If `useNaiveDataExtraction` is enabled, then we don't gather any simp lemmas
   match s with
   | `(tactic| simp [$simpLemmas,*])
   | `(tactic| simp? [$simpLemmas,*])
@@ -245,7 +250,7 @@ def simpLemmasFromTacticStx (s : Syntax) : MetaM (Std.HashMap Name SimpAllHint) 
   | `(tactic| dsimp? only [$simpLemmas,*])
   | `(tactic| dsimp?! only [$simpLemmas,*]) =>
     let simpLemmas := simpLemmas.getElems
-    let mut res : Std.HashMap Name SimpAllHint := Std.HashMap.empty
+    let mut res : Std.HashMap Name SimpAllHint := ∅
     for simpLemma in simpLemmas do
       let simpLemma := simpLemma.raw
       if simpLemma.getKind == ``Lean.Parser.Tactic.simpErase then
@@ -284,12 +289,13 @@ def simpLemmasFromTacticStx (s : Syntax) : MetaM (Std.HashMap Name SimpAllHint) 
       else
         throwUnsupportedSyntax
     return res
-  | _ => return Std.HashMap.empty
+  | _ => return ∅
 
 /-- It is possible for some tactics such as `simp_rw` to invoke rewrite lemmas that do not appear in the final proof term (for instance, to direct unfolding).
     This function returns the set of rewrite lemmas that appear in the tactic syntax (and annotates them with `unmodified`, `backwardOnly`, or `notInSimpAll`),
     starting for the initial hashmap `hammerRecommendation` -/
 def rwLemmasFromTacticStx (s : Syntax) (hammerRecommendation : Std.HashMap Name SimpAllHint) : MetaM (Std.HashMap Name SimpAllHint) := do
+  if useNaiveDataExtraction then return hammerRecommendation -- If `useNaiveDataExtraction` is enabled, then we don't gather any lemmas from `rw` syntax
   match s with
   | `(tactic| simp_rw $rws:rwRuleSeq) =>
     -- Code for iterating through `rws` adapted from `Mathlib.Tactic.withSimpRWRulesSeq`
@@ -352,7 +358,7 @@ def trainingDataGivenTactic (elabDeclInfo : ElabDeclInfo) (module : ModuleName) 
         termConstantsNameSet := termConstantsNameSet.append $ unfoldConstantName constName constantsMap Name.isAuxLemma
       let termConstants := termConstantsNameSet.toArray
       -- Filter `termConstants` to only included constants that are lemmas (i.e. Prop-typed) and not blacklisted
-      let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && !isBlackListed s!"{n}"))
+      let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && (useNaiveDataExtraction || !isBlackListed s!"{n}")))
       -- Build `hammerRecommendation` starting with any `simp` lemmas that appear in the tactic stx (not including blacklisted lemmas)
       let mut hammerRecommendation ← simpLemmasFromTacticStx i.info.stx
       hammerRecommendation ← rwLemmasFromTacticStx i.info.stx hammerRecommendation
@@ -394,49 +400,55 @@ def trainingDataToJson (d : TrainingData) : Json :=
     other `TrainingData` objects related to this theorem have previous been produced, then `declHammerRecommendation` is passed
     in as well so that the information from there can be included. -/
 def printTrainingDataGivenTheoremVal (elabDeclInfo : ElabDeclInfo) (module : ModuleName) (hash : String) (cmd : CompilationStep) (v : TheoremVal)
-  (declHammerRecommendation : Option (Std.HashMap Name SimpAllHint)) : MetaM (Std.HashMap Name SimpAllHint) := do
-  let thmInfo ← Info.ofConstantVal' v.toConstantVal
-  let sourceUpToTactic := Substring.mk (← moduleSource module) 0 (cmd.stx.getTailPos?.getD 0)
-  let declUpToTactic := Substring.mk (← moduleSource module) (cmd.stx.getPos?.getD 0) (cmd.stx.getTailPos?.getD 0)
+    (declHammerRecommendation : Option (Std.HashMap Name SimpAllHint)) : IO (Std.HashMap Name SimpAllHint) := do
+  let coreContext : Core.Context := {
+    fileName := "<ntp-toolkit>", fileMap := default, maxHeartbeats := 0 }
+  let coreState : Core.State := { env := cmd.after }
+  Prod.fst <$> MetaM.toIO (ctxCore := coreContext) (sCore := coreState) do
+    let numArgs ← numArgsOfConstantVal v.toConstantVal
+    let sourceUpToTactic := Substring.mk (← moduleSource module) 0 (cmd.stx.getTailPos?.getD 0)
+    let declUpToTactic := Substring.mk (← moduleSource module) (cmd.stx.getPos?.getD 0) (cmd.stx.getTailPos?.getD 0)
 
-  let vType := v.type
-  let Expr.mvar m ← mkFreshExprMVar vType
-    | throwError "trainingDataGivenTheoremVal :: Failed to build an mvar of type {vType}"
-  let (_, m) ← m.introNP thmInfo.args.size
-  let state := (← withOptions (fun o => (o.set `pp.notation false).set `pp.fullNames true) $ Meta.ppGoal m).pretty
+    let vType := v.type
+    let Expr.mvar m ← mkFreshExprMVar vType
+      | throwError "trainingDataGivenTheoremVal :: Failed to build an mvar of type {vType}"
+    let (_, m) ← m.introNP numArgs
+    let state ←
+      pure (← withNtpToolkitPPOptions $ Meta.ppGoal m).pretty
 
-  let hammerRecommendation ← m.withContext do
-    -- Gather all constants that appear in the proof term generated by the current tactic
-    let constantsMap := (← getEnv).constants.map₁
-    let termConstantNamesNoUnfolding := v.value.getUsedConstantsAsSet
-    -- Unfold all auxiliary lemmas in `termConstantNamesNoUnfolding`
-    let mut termConstantsNameSet : NameSet := ∅
-    for constName in termConstantNamesNoUnfolding do
-      termConstantsNameSet := termConstantsNameSet.append $ unfoldConstantName constName constantsMap Name.isAuxLemma
-    let termConstants := termConstantsNameSet.toArray
-    -- Filter `termConstants` to only included constants that are lemmas (i.e. Prop-typed) and not blacklisted
-    let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && !isBlackListed s!"{n}"))
-    -- Every `SimpAllHint` should be `notInSimpAll` for term proofs
-    let hammerRecommendation := Std.HashMap.ofList $ termPremises.toList.map (fun thm => (thm, SimpAllHint.notInSimpAll))
-    match declHammerRecommendation with
-    | none => pure hammerRecommendation
-    | some declHammerRecommendation => pure $ mergeHammerRecommendations hammerRecommendation declHammerRecommendation
+    let hammerRecommendation ← m.withContext do
+      -- Gather all constants that appear in the proof term generated by the current tactic
+      let constantsMap := (← getEnv).constants.map₁
+      let termConstantNamesNoUnfolding := v.value.getUsedConstantsAsSet
+      -- Unfold all auxiliary lemmas in `termConstantNamesNoUnfolding`
+      let mut termConstantsNameSet : NameSet := ∅
+      for constName in termConstantNamesNoUnfolding do
+        termConstantsNameSet := termConstantsNameSet.append $ unfoldConstantName constName constantsMap Name.isAuxLemma
+      let termConstants := termConstantsNameSet.toArray
+      -- Filter `termConstants` to only included constants that are lemmas (i.e. Prop-typed) and not blacklisted
+      let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && (useNaiveDataExtraction || !isBlackListed s!"{n}")))
+      -- Every `SimpAllHint` should be `notInSimpAll` for term proofs
+      let hammerRecommendation := Std.HashMap.ofList $ termPremises.toList.map (fun thm => (thm, SimpAllHint.notInSimpAll))
+      match declHammerRecommendation with
+      | none => pure hammerRecommendation
+      | some declHammerRecommendation => pure $ mergeHammerRecommendations hammerRecommendation declHammerRecommendation
 
-  let data : TrainingData := {
-      declId := makeElabDeclId elabDeclInfo module hash,
-      declName := v.name.toString,
-      srcUpToTactic := sourceUpToTactic.toString,
-      declUpToTactic := declUpToTactic.toString,
-      state := state,
-      nextTactic := none,
-      nextTacticHammerRecommendation := hammerRecommendation,
-      declHammerRecommendation := hammerRecommendation,
-    }
-  IO.println s!"{(trainingDataToJson data).compress}"
-  return data.declHammerRecommendation
+    let data : TrainingData := {
+        declId := makeElabDeclId elabDeclInfo module hash,
+        declName := v.name.toString,
+        srcUpToTactic := sourceUpToTactic.toString,
+        declUpToTactic := declUpToTactic.toString,
+        state := state,
+        nextTactic := none,
+        nextTacticHammerRecommendation := hammerRecommendation,
+        declHammerRecommendation := hammerRecommendation,
+      }
+    IO.println s!"{(trainingDataToJson data).compress}"
+    return data.declHammerRecommendation
 
 def trainingDataGivenModule (module : ModuleName) (includeDebugMessages : Bool) : IO UInt32 := do
-  searchPathRef.set compile_time_search_path%
+  unsafe enableInitializersExecution
+  initSearchPath (← findSysroot)
   let infos ← getElabDeclInfo (← moduleInfoTrees module)
   let compilationSteps ← compileModule module
   let trees ← getInvocationTrees $ compilationSteps.flatMap (fun c => c.trees)
@@ -468,7 +480,7 @@ def trainingDataGivenModule (module : ModuleName) (includeDebugMessages : Bool) 
       | none => pure ()
   -- Perform a second pass to gather data that potentially spans multiple tactics
   let mut activeDeclId : String := (dataArr.getD 0 default).declId
-  let mut declHammerRecommendations : Std.HashMap String (Std.HashMap Name SimpAllHint) := Std.HashMap.empty
+  let mut declHammerRecommendations : Std.HashMap String (Std.HashMap Name SimpAllHint) := ∅
   let mut activeDeclName : String := (dataArr.getD 0 default).declName
   let mut activeDeclHammerRecommendation : Std.HashMap Name SimpAllHint := (dataArr.getD 0 default).nextTacticHammerRecommendation
   for i in [:dataArr.size] do
@@ -507,8 +519,13 @@ def trainingDataGivenModule (module : ModuleName) (includeDebugMessages : Bool) 
           | some elabDeclInfo =>
             match declHammerRecommendations.get? v.name.toString with
             | some vDeclHammerRecommendation =>
-              let vDeclHammerRecommendation ← CoreM.withImportModules #[`Mathlib.Lean.PrettyPrinter.Delaborator, `Mathlib.Util.Delaborators, `Lean.PrettyPrinter, module]
-                (printTrainingDataGivenTheoremVal elabDeclInfo module hash cmd v (some vDeclHammerRecommendation)).run'
+              let vDeclHammerRecommendation ←
+                try
+                  printTrainingDataGivenTheoremVal elabDeclInfo module hash cmd v (some vDeclHammerRecommendation)
+                catch e =>
+                  if includeDebugMessages then
+                    IO.println s!"Error processing declaration {v.name}: {e.toString}"
+                  pure {}
               /- In addition to printing the JSON entry corresponding to `v` as a whole (which `printTrainingDataGivenTheoremVal` already does),
                  we can now print the JSON entry for each of `v`'s tactic states with a fully updated decl hammer recommendation -/
               let mut encounteredDecl := false
@@ -520,8 +537,11 @@ def trainingDataGivenModule (module : ModuleName) (includeDebugMessages : Bool) 
                 else if encounteredDecl then -- All entries of the same decl are contiguous in `dataArr` so if we reach this we've fixed all necessary entries
                   break
             | none => -- No need to update `dataArr` since the current theorem does not appear in `dataArr`
-              let _ ← CoreM.withImportModules #[`Mathlib.Lean.PrettyPrinter.Delaborator, `Mathlib.Util.Delaborators, `Lean.PrettyPrinter, module]
-                (printTrainingDataGivenTheoremVal elabDeclInfo module hash cmd v none).run'
+              try
+                let _ ← printTrainingDataGivenTheoremVal elabDeclInfo module hash cmd v none
+              catch e =>
+                if includeDebugMessages then
+                  IO.println s!"Error processing declaration {v.name}: {e.toString}"
           | none => continue
       | _ => continue
   return 0
@@ -558,3 +578,6 @@ def main (args : List String) : IO UInt32 :=
 -- #eval Command.liftTermElabM $ trainingDataGivenModule `Mathlib.Data.Int.Defs
 -- #eval Command.liftTermElabM $ trainingDataGivenModule `Mathlib.Data.Option.Basic
 -- #eval Command.liftTermElabM $ trainingDataGivenModule `Mathlib.Data.Set.Basic
+-- #eval Command.liftTermElabM $ trainingDataGivenModule `Mathlib.Algebra.BigOperators.Group.List.Defs false
+-- #eval Command.liftTermElabM $ trainingDataGivenModule `Mathlib.Algebra.SkewMonoidAlgebra.Basic false
+-- #eval Command.liftTermElabM $ trainingDataGivenModule `Init.System.Promise false
