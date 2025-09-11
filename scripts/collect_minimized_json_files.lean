@@ -209,7 +209,7 @@ def natModules : List Name := [
 def nameToJson (n mod : Name) : IO (Option Json) := do
   let json ←
     try
-      let fileName := (← findJSONFile mod "/Users/joshClune/Desktop/TrainingDataWithPremises/TrainingDataWithPremisesCurrent").toString
+      let fileName := (← findJSONFile mod "ground_truth_json_files").toString
       let jsonObjects ← IO.FS.lines fileName
       IO.ofExcept $ jsonObjects.mapM Json.parse
     catch e =>
@@ -283,7 +283,7 @@ def Name.isHumanTheorem (name : Name) : CoreM Bool := do
 def runStoreNames := @id (CoreM _) do
   let all ← Name.getConstsOfModules intModules
   let all ← all.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
-  storeNames all s!"../ground_truth_json_files/IntModules.json"
+  storeNames all s!"../minimized_json_files/IntModules.json"
 
 -- #eval runStoreNames
 

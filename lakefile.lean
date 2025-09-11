@@ -78,6 +78,4 @@ lean_exe add_premises where
   supportInterpreter := true
 
 @[default_target]
-lean_exe collect_ground_truth where
-  root := `scripts.collect_ground_truth
-  supportInterpreter := true
+lean_lib scripts.collect_minimized_json_files 
