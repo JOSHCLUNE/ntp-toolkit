@@ -209,7 +209,7 @@ def natModules : List Name := [
 def nameToJson (n mod : Name) : IO (Option Json) := do
   let json ←
     try
-      let fileName := (← findJSONFile mod "ground_truth_json_files").toString
+      let fileName := s!"ground_truth_json_files/{mod}.jsonl"
       let jsonObjects ← IO.FS.lines fileName
       IO.ofExcept $ jsonObjects.mapM Json.parse
     catch e =>
