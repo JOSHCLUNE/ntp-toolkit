@@ -283,7 +283,7 @@ def Name.isHumanTheorem (name : Name) : CoreM Bool := do
 def runStoreNames := @id (CoreM _) do
   let all ← Name.getConstsOfModules intModules
   let all ← all.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
-  storeNames all s!"../minimized_json_files/IntModules.json"
+  storeNames all s!"minimized_json_files/IntModules.json"
 
 -- #eval runStoreNames
 
