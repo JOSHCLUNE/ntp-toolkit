@@ -76,3 +76,8 @@ lean_exe update_hammer_blacklist where
 lean_exe add_premises where
   root := `scripts.add_premises
   supportInterpreter := true
+
+@[default_target]
+lean_exe collect_ground_truth where
+  root := `scripts.collect_ground_truth
+  supportInterpreter := true
