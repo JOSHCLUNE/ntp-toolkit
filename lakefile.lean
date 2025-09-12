@@ -15,6 +15,9 @@ require «doc-gen4» from git "https://github.com/leanprover/doc-gen4.git" @ "v4
 require mathlib from git
   "https://github.com/leanprover-community/mathlib4.git" @ "v4.22.0"
 
+require QuerySMT from git
+  "https://github.com/JOSHCLUNE/LeanSMTParser.git" @ "main"
+
 @[default_target]
 lean_lib TrainingData where
 
@@ -77,5 +80,10 @@ lean_exe add_premises where
   root := `scripts.add_premises
   supportInterpreter := true
 
+-- @[default_target]
+-- lean_lib scripts.collect_minimized_json_files
+
 @[default_target]
-lean_lib scripts.collect_minimized_json_files 
+lean_exe tactic_benchmark where
+  root := `scripts.tactic_benchmark
+  supportInterpreter := true
