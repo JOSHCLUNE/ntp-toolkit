@@ -206,31 +206,11 @@ def findLean (mod : Name) : IO FilePath := do
       throw <| IO.userError s!"Path to {mod} not found"
     return fname
 
-/-- Like `findLean` but produces the version of the file in `Examples/WithImports`. This only supports Lean versions at least
-    as recent as Lean v4.3. -/
 def findLeanWithImports (mod : Name) (withImportsDir : String) : IO FilePath := do
-  let withImportsPathPrefix := withImportsDir ++ "/"
-  let path := (← findOLean mod).toString
-  let path := path.replace "./" ""
-  let path := path.replace ".lake/packages/" ""
-  let path := path.dropWhile (· ≠ '/')  -- remove project name, e.g. "mathlib"
-  let path := path.replace "/.lake/build/lib/lean/" ""
-  let path := path.replace "/" "."
-  let path := withImportsPathPrefix ++ path
-  return FilePath.mk path |>.withExtension "lean"
+  return FilePath.mk (withImportsDir ++ s!"/{mod}.lean")
 
-/-- Given `mod`, the name of the repository `mod` is from, and the `Examples` directory containing relevant JSON files,
-    returns the JSON file corresponding to `mod` within `jsonDir`. -/
 def findJSONFile (mod : Name) (jsonDir : String) : IO FilePath := do
-  let jsonDirPrefix := jsonDir ++ "/"
-  let path := (← findOLean mod).toString
-  let path := path.replace "./" ""
-  let path := path.replace ".lake/packages/" ""
-  let path := path.dropWhile (· ≠ '/')  -- remove project name, e.g. "mathlib"
-  let path := path.replace "/.lake/build/lib/lean/" ""
-  let path := path.replace "/" "."
-  let path := jsonDirPrefix ++ path
-  return FilePath.mk path |>.withExtension "jsonl"
+  return FilePath.mk (jsonDir ++ s!"/{mod}.jsonl")
 
 /-- Implementation of `moduleSource`, which is the cached version of this function. -/
 def moduleSource' (mod : Name) : IO String := do
