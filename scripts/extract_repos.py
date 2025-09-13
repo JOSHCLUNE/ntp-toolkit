@@ -24,6 +24,9 @@ require «doc-gen4» from git "https://github.com/leanprover/doc-gen4.git" @ "%s
 require %s from git
   "%s.git" @ "%s"
 
+require QuerySMT from git
+  "https://github.com/JOSHCLUNE/LeanSMTParser.git" @ "main"
+
 @[default_target]
 lean_lib TrainingData where
 
@@ -84,6 +87,14 @@ lean_exe update_hammer_blacklist where
 @[default_target]
 lean_exe add_premises where
   root := `scripts.add_premises
+  supportInterpreter := true
+
+-- @[default_target]
+-- lean_lib scripts.collect_minimized_json_files
+
+@[default_target]
+lean_exe tactic_benchmark where
+  root := `scripts.tactic_benchmark
   supportInterpreter := true
 """ % (toolchain_version, name, repo, commit)
     with open(os.path.join(cwd, 'lakefile.lean'), 'w') as f:
