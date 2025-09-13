@@ -77,6 +77,19 @@ def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : N
       )
     evalTactic (← `(tactic| querySMT [*, $hammerRecommendation,*]))
 
+def useGrindWithRecommendation (hammerRecommendation : Array String) : TacticM Unit := do
+  let hammerRecommendation : Array Ident ←
+    hammerRecommendation.mapM (fun x => do
+      let [name, _] := x.splitOn ","
+        | throwError "{decl_name%} :: Unable to parse hammerRecommendation {x}"
+      let name := name.drop 1 -- Remove leading left parenthesis
+      pure (mkIdent name.toName)
+    )
+  let mut grindParams : TSyntaxArray `Lean.Parser.Tactic.grindParam := #[]
+  for t in hammerRecommendation do
+    grindParams := grindParams.push $ ← `(Lean.Parser.Tactic.grindParam| $t:ident)
+  evalTactic (← `(tactic| grind [$grindParams,*]))
+
 def useAesopWithPremises (hammerRecommendation : Array String) : TacticM Unit := do
   let hammerRecommendation : Array Ident ←
     hammerRecommendation.mapM (fun x => do
@@ -477,6 +490,49 @@ def runSimpAllAtDecl (mod : Name) (declName : Name) (decls : ConstantInfo → Me
         pure .failure
     return some ⟨res, seconds, heartbeats⟩
 
+def runGrindAtDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (withImportsPath : String) (jsonDir : String)
+  : IO (Option (ConstantInfo × GeneralResult)) := do
+  runAtDecl mod declName (some withImportsPath) fun ci numArgs? => do
+    if ! (← decls ci) then return none
+    let g ←
+      match numArgs? with
+      | some numArgs =>
+        let g ← mkFreshExprMVar ci.type
+        let (_, g) ← g.mvarId!.introNP numArgs -- Introduce universal binders corresponding to arguments of the theorem
+        pure g
+      | none => return none -- Only run the tactic on theorems
+    -- Find JSON file corresponding to current `mod`
+    let fileName := (← findJSONFile mod jsonDir).toString
+    let jsonObjects ← IO.FS.lines fileName
+    let json ← IO.ofExcept $ jsonObjects.mapM Json.parse
+    -- Find `declHammerRecommendation` corresponding to current `ci`
+    let mut ciEntry := Json.null
+    for jsonEntry in json do
+      let jsonDeclName ← IO.ofExcept $ jsonEntry.getObjVal? "declName"
+      let curDeclName ← IO.ofExcept $ jsonDeclName.getStr?
+      if curDeclName == s!"{ci.name}" then
+        ciEntry := jsonEntry
+        dbg_trace "Found jsonEntry for {declName}"
+        break
+    if ciEntry.isNull then
+      return some ⟨.noJSON, 0.0, 0⟩
+    let recommendation ← IO.ofExcept $ ciEntry.getObjVal? "declHammerRecommendation"
+    let recommendation ← IO.ofExcept $ recommendation.getArr?
+    let recommendation ← IO.ofExcept $ recommendation.mapM Json.getStr?
+    let ((res, heartbeats), seconds) ← withSeconds <| withHeartbeats <|
+      try
+        TermElabM.run' (do
+          dbg_trace "About to use grind for {ci.name} in module {mod} (recommendation: {recommendation})"
+          let gs ← Tactic.run g $ useGrindWithRecommendation recommendation
+          match gs with
+          | [] => pure .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate on Prop declarations
+          | _ :: _ => pure .subgoals)
+          (ctx := {declName? := `fakeDecl, errToSorry := false})
+      catch e =>
+        dbg_trace "Encountered an error: {← e.toMessageData.toString}"
+        pure .failure
+    return some ⟨res, seconds, heartbeats⟩
+
 def runAesopWithPremisesAtDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (withImportsPath : String) (jsonDir : String)
   : IO (Option (ConstantInfo × GeneralResult)) := do
   runAtDecl mod declName (some withImportsPath) fun ci numArgs? => do
@@ -818,6 +874,17 @@ def simpAllBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsD
     IO.println s!"Encountered an issue attempting to run simpAll benchmark at {declName} in module {module}"
     return 0
 
+def grindBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsDir : String) (jsonDir : String) : IO UInt32 := do
+  initSearchPath (← findSysroot)
+  let result ← runGrindAtDecl module declName (fun ci => try isProp ci.type catch _ => pure false) withImportsDir jsonDir
+  match result with
+  | some (ci, ⟨type, seconds, heartbeats⟩) =>
+    IO.println $ generalResultTypeToEmojiString type ++ " " ++ ci.name.toString ++ s!" ({seconds}s) ({heartbeats} heartbeats)"
+    return 0
+  | none =>
+    IO.println s!"Encountered an issue attempting to run grind benchmark at {declName} in module {module}"
+    return 0
+
 def aesopWithPremisesBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsDir : String) (jsonDir : String) : IO UInt32 := do
   initSearchPath (← findSysroot)
   let result ← runAesopWithPremisesAtDecl module declName (fun ci => try isProp ci.type catch _ => pure false) withImportsDir jsonDir
@@ -897,6 +964,8 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       | "querySMT_ignoreHints" => querySMTBenchmarkAtDecl module declName withImportsPath premisesPath externalProverTimeout true
       | "querySMTModule" => querySMTBenchmarkFromModule module withImportsPath premisesPath externalProverTimeout false
       | "querySMTModule_ignoreHints" => querySMTBenchmarkFromModule module withImportsPath premisesPath externalProverTimeout true
+
+      | "grind" => grindBenchmarkAtDecl module declName withImportsPath premisesPath
 
       | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
   catch e =>
