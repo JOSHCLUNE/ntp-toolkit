@@ -45,7 +45,7 @@ def addImports (args : Cli.Parsed) : IO UInt32 := do
     needToCheck := true
   if args.hasFlag "duper" && !args.hasFlag "querySMT" && !args.hasFlag "hammer" then importPkgs := `Duper :: importPkgs
   if importPkgs.isEmpty then
-    importPkgs := [`Hammer, `Aesop] -- Default behavior if no flags are included
+    importPkgs := [`QuerySMT, `Aesop] -- Default behavior if no flags are included
   if needToCheck then addImportsToModule module importPkgs
   else addImportsToModuleWithoutChecking module importPkgs
 
