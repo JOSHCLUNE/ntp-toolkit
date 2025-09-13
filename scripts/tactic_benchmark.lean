@@ -832,8 +832,8 @@ def querySMTResultTypeToEmojiString (res : QuerySMTResultType) : String :=
 
 def generalResultTypeToEmojiString (res : GeneralResultType) : String :=
   match res with
-  | .success => checkEmoji
-  | .failure => crossEmoji
+  | .success => checkEmoji ++ "(success)"
+  | .failure => crossEmoji ++ "(failure)"
   | .noJSON => bombEmoji ++ "(noJSON)"
   | .notDefEq => bombEmoji ++ "(notDefEq)"
   | .subgoals => bombEmoji ++ "(subgoals)"
