@@ -90,6 +90,9 @@ def useGrindWithRecommendation (hammerRecommendation : Array String) : TacticM U
     grindParams := grindParams.push $ ← `(Lean.Parser.Tactic.grindParam| $t:ident)
   evalTactic (← `(tactic| grind [$grindParams,*]))
 
+def useGrind : TacticM Unit := do
+  evalTactic (← `(tactic| grind))
+
 def useAesopWithPremises (hammerRecommendation : Array String) : TacticM Unit := do
   let hammerRecommendation : Array Ident ←
     hammerRecommendation.mapM (fun x => do
@@ -965,7 +968,8 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       | "querySMTModule" => querySMTBenchmarkFromModule module withImportsPath premisesPath externalProverTimeout false
       | "querySMTModule_ignoreHints" => querySMTBenchmarkFromModule module withImportsPath premisesPath externalProverTimeout true
 
-      | "grind" => grindBenchmarkAtDecl module declName withImportsPath premisesPath
+      | "grindWithRecommendation" => grindBenchmarkAtDecl module declName withImportsPath premisesPath
+      | "grind" => tacticBenchmarkAtDecl module declName (some withImportsPath) useGrind TacType.General
 
       | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
   catch e =>
