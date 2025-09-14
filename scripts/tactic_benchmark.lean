@@ -307,6 +307,12 @@ inductive ResultType
 | HammerResult : HammerResultType → ResultType
 | QuerySMTResult : QuerySMTResultType → ResultType
 
+instance : ToString ResultType where
+  toString := fun
+  | .GeneralResult res => toString res
+  | .HammerResult res => toString res
+  | .QuerySMTResult res => toString res
+
 structure Result where
   type : ResultType
   seconds : Float
@@ -862,7 +868,7 @@ def tacticBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsPa
   IO.println s!"Testing on {declName} in {module}"
   match result with
   | some (ci, ⟨type, seconds, heartbeats⟩) =>
-    IO.println <| (resultTypeToEmojiString type) ++ " " ++ ci.name.toString ++
+    IO.println <| (resultTypeToEmojiString type) ++ s!"({type}) " ++ ci.name.toString ++
       s!" ({seconds}s) ({heartbeats} heartbeats)"
     return 0
   | none =>
