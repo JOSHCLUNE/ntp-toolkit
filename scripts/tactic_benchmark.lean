@@ -77,6 +77,9 @@ def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : N
       )
     evalTactic (← `(tactic| querySMT [*, $hammerRecommendation,*]))
 
+def useQuerySMTBlind : TacticM Unit := do
+  evalTactic (← `(tactic| querySMT [*]))
+
 def useGrindWithRecommendation (hammerRecommendation : Array String) : TacticM Unit := do
   let hammerRecommendation : Array Ident ←
     hammerRecommendation.mapM (fun x => do
@@ -970,6 +973,7 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
 
       | "grindWithRecommendation" => grindBenchmarkAtDecl module declName withImportsPath premisesPath
       | "grind" => tacticBenchmarkAtDecl module declName (some withImportsPath) useGrind TacType.General
+      | "querySMTBlind" => tacticBenchmarkAtDecl module declName (some withImportsPath) useQuerySMTBlind TacType.QuerySMT
 
       | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
   catch e =>
