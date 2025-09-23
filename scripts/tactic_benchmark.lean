@@ -219,14 +219,14 @@ def runAtDecl (mod : Name) (declName : Name) (withImportsDir : Option String := 
     The temporary file that `runAtAliasDecl` creates imports both `mod` and `tac`. For this, `tacImport` is the string that `runAtAliasDecl` uses to import `tac`. -/
 def runAtAliasDecl {α} (mod : Name) (declName : Name) (tacImport : String) (tac : ConstantInfo → Option Nat → MetaM (Option α)) : IO (Option (ConstantInfo × α)) := do
   FS.withTempFile $ fun fhandle fpath => do
-    let modSource := s!"import {mod}\nimport {tacImport}\nalias {declName}__eval := {declName}"
+    let modSource := s!"import {mod}\nimport {tacImport}\nalias {declName}.__eval := {declName}"
     fhandle.putStrLn modSource
     fhandle.flush
     let fileName := fpath.toString
     let steps := Lean.Elab.IO.processInput' modSource none {} fileName true mod
     let targets := steps.bind fun c => (MLList.ofList c.diff).map fun i => (c, i)
     for (cmd, ci) in targets do
-      if ci.name == declName then
+      if s!"{ci.name}" == s!"{declName}__eval" then
         let options := ({} : KVMap).insert `maxHeartbeats (.ofNat 200000)
         let ctx := { fileName, options, fileMap := default }
         let stateBefore := { env := cmd.before }
@@ -256,7 +256,7 @@ def runAtAliasDecl {α} (mod : Name) (declName : Name) (tacImport : String) (tac
               | some r => pure $ some (ci, r)
               | none => pure none
         return res
-    IO.eprintln s!"Unable to find declaration {declName} in module {mod}"
+    IO.eprintln s!"Unable to find declaration {declName}__eval in alias temporary file for {mod}"
     return none
 
 inductive GeneralResultType
