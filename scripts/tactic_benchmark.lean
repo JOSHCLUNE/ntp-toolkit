@@ -460,7 +460,7 @@ def runGrindAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo →
     for jsonEntry in json do
       let jsonDeclName ← IO.ofExcept $ jsonEntry.getObjVal? "declName"
       let curDeclName ← IO.ofExcept $ jsonDeclName.getStr?
-      if curDeclName == s!"{ci.name}" then
+      if s!"{curDeclName}__eval" == s!"{ci.name}" then
         ciEntry := jsonEntry
         dbg_trace "Found jsonEntry for {declName}"
         break
@@ -503,7 +503,7 @@ def runQuerySMTAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo 
     for jsonEntry in json do
       let jsonDeclName ← IO.ofExcept $ jsonEntry.getObjVal? "declName"
       let curDeclName ← IO.ofExcept $ jsonDeclName.getStr?
-      if curDeclName == s!"{ci.name}" then
+      if s!"{curDeclName}__eval" == s!"{ci.name}" then
         ciEntry := jsonEntry
         dbg_trace "Found jsonEntry for {declName}"
         break
