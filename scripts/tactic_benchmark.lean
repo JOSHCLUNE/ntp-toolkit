@@ -200,7 +200,7 @@ def runAtDecl (mod : Name) (declName : Name) (withImportsDir : Option String := 
       -- From `IO` to `CoreM`:
       let res ← Prod.fst <$> (CoreM.toIO · ctx stateBefore) do -- Use `stateBefore` to accurately simulate the environment before the declaration was created
         if ← ci.name.isBlackListed then
-          IO.eprintln s!"runAtDecl :: {ci.name} is blacklisted and is therefore not an eligible declaration for runAtDecl"
+          IO.eprintln s!"{decl_name%} :: {ci.name} is blacklisted and is therefore not an eligible declaration for runAtDecl"
           return none
         else
           -- From `CoreM` to `MetaM`:
@@ -211,6 +211,53 @@ def runAtDecl (mod : Name) (declName : Name) (withImportsDir : Option String := 
       return res
   IO.eprintln s!"Unable to find declaration {declName} in module {mod}"
   return none
+
+/-- This function is intended to achieve the same result as `runAtDecl`, but instead of running `tac` with exactly the environment produced by the original declaration,
+    `runAtAliasDecl` creates an alias for `declName` and runs `tac` on that. This is used for declarations that `tac` itself depends on (because `runAtDecl` only works
+    when `tac`'s dependencies have already been imported, attempting to use `runAtDecl` for a declaration that `tac` depends on will result in a circular dependency).
+
+    The temporary file that `runAtAliasDecl` creates imports both `mod` and `tac`. For this, `tacImport` is the string that `runAtAliasDecl` uses to import `tac`. -/
+def runAtAliasDecl {α} (mod : Name) (declName : Name) (tacImport : String) (tac : ConstantInfo → Option Nat → MetaM (Option α)) : IO (Option (ConstantInfo × α)) := do
+  FS.withTempFile $ fun fhandle fpath => do
+    let modSource := s!"import {mod}\nimport {tacImport}\nalias {declName}__eval := {declName}"
+    fhandle.putStrLn modSource
+    fhandle.flush
+    let fileName := fpath.toString
+    let steps := Lean.Elab.IO.processInput' modSource none {} fileName true mod
+    let targets := steps.bind fun c => (MLList.ofList c.diff).map fun i => (c, i)
+    for (cmd, ci) in targets do
+      if ci.name == declName then
+        let options := ({} : KVMap).insert `maxHeartbeats (.ofNat 200000)
+        let ctx := { fileName, options, fileMap := default }
+        let stateBefore := { env := cmd.before }
+        let stateAfter := { env := cmd.after }
+        -- Calculate `numArgs`, the number of arguments the theorem `ci` takes
+        /- **TODO** This `numArgs` approximation is consistent with the approximation that's performed in training_data_with_premises.lean,
+          but it is not entirely accurate to the real number of arguments in the theorem declaration. The issue is that `numArgs` counts
+          the number of distinct binders in the theorem declaration, not the actual number of arguments that the theorem takes (so `{a b : Nat}`
+          is counted as 1 binder, but the theorem really takes 2 arguments). -/
+        let numArgs ←
+          Prod.fst <$> (CoreM.toIO · ctx stateAfter) do -- Use `stateAfter` because `Info.ofConstantVal'` needs to access the constant in the environment
+            MetaM.run' (ctx := {}) (s := {}) do
+              match ci with
+              | .thmInfo v =>
+                let thmInfo ← Info.ofConstantVal' v.toConstantVal
+                return some thmInfo.args.size
+              | _ => return none
+        -- From `IO` to `CoreM`:
+        let res ← Prod.fst <$> (CoreM.toIO · ctx stateBefore) do -- Use `stateBefore` to accurately simulate the environment before the declaration was created
+          if ← ci.name.isBlackListed then
+            IO.eprintln s!"{decl_name%} :: {ci.name} is blacklisted and is therefore not an eligible declaration for runAtAliasDecl"
+            return none
+          else
+            -- From `CoreM` to `MetaM`:
+            MetaM.run' (ctx := {}) (s := {}) do
+              match ← tac ci numArgs with
+              | some r => pure $ some (ci, r)
+              | none => pure none
+        return res
+    IO.eprintln s!"Unable to find declaration {declName} in module {mod}"
+    return none
 
 inductive GeneralResultType
 | success
@@ -400,6 +447,69 @@ def runTacticAtDecls (mod : Name) (decls : ConstantInfo → CoreM Bool) (withImp
 def runTacticAtDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (withImportsPath? : Option String) (tac : TacticM Unit)
   (tacType : TacType) : IO (Option (ConstantInfo × Result)) := do
   runAtDecl mod declName withImportsPath? fun ci numArgs? => do
+    if ! (← decls ci) then return none
+    let g ←
+      match numArgs? with
+      | some numArgs =>
+        let g ← mkFreshExprMVar ci.type
+        let (_, g) ← g.mvarId!.introNP numArgs -- Introduce universal binders corresponding to arguments of the theorem
+        pure g
+      | none => return none -- Only run the tactic on theorems
+    let ((res, heartbeats), seconds) ← withSeconds <| withHeartbeats <|
+      tryCatchRuntimeEx
+        (TermElabM.run' (do
+          let gs ← Tactic.run g tac
+          match tacType with
+          | .General =>
+            match gs with
+            | _ :: _ => pure $ GeneralResult .subgoals
+            | [] =>
+              match ci.value? with
+              | none => pure $ GeneralResult .success
+              | some v =>
+                if ← isProp ci.type then
+                  pure $ GeneralResult .success
+                else
+                match ← try? (isDefEq (Expr.mvar g) v) with
+                | none
+                  -- In this case we should perhaps return an "uncertain" value.
+                  -- The problem is that `v` may contain constants generated by the simplifier
+                  -- during elaboration of the original proof,
+                  -- and which aren't in the current environment, so we can't really compare `g` and `v`
+                | some false => pure $ GeneralResult .notDefEq
+                | some true => pure $ GeneralResult .success
+          | .Hammer =>
+            match gs with
+            | [] => pure $ HammerResult .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate `hammer` on Prop declarations
+            | _ :: _ => pure $ HammerResult .subgoals
+          | .QuerySMT =>
+            match gs with
+            | [] => pure $ QuerySMTResult .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate `querySMT` on Prop declarations
+            | _ :: _ => pure $ QuerySMTResult .subgoals
+          )
+          (ctx := {declName? := `fakeDecl, errToSorry := false}))
+        (fun e => do
+          match tacType with
+          | .General => pure $ GeneralResult .failure
+          | .Hammer => throwError "{decl_name%} :: Current version of tactic_benchmark.lean does not support evaluating the hammer"
+          | .QuerySMT =>
+            if ← QuerySMT.errorIsSkolemizationError e then pure $ QuerySMTResult .skolemizationFailure
+            else if ← QuerySMT.errorIsTranslationError e then pure $ QuerySMTResult .smtTranslationFailure
+            else if ← QuerySMT.errorIsSolverError e then pure $ QuerySMTResult .externalProverFailure
+            else if ← QuerySMT.errorIsHintParsingError e then pure $ QuerySMTResult .hintParsingFailure
+            else if ← QuerySMT.errorIsSelectorConstructionError e then pure $ QuerySMTResult .selectorConstructionFailure
+            else if ← QuerySMT.errorIsDuperError e then pure $ QuerySMTResult .duperFailure
+            else if ← QuerySMT.errorIsProofFitError e then pure $ QuerySMTResult .proofFitFailure
+            else
+              dbg_trace "{decl_name%} :: miscFailure for {ci.name} in module {mod}: {← e.toMessageData.toString}"
+              pure $ QuerySMTResult .miscFailure
+        )
+    return some ⟨res, seconds, heartbeats⟩
+
+/-- Like `runTacticAtDecl` but uses `runAtAliasDecl` instead of `runAtDecl`. -/
+def runTacticAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (tacImport : String) (tac : TacticM Unit)
+  (tacType : TacType) : IO (Option (ConstantInfo × Result)) := do
+  runAtAliasDecl mod declName tacImport fun ci numArgs? => do
     if ! (← decls ci) then return none
     let g ←
       match numArgs? with
@@ -877,6 +987,19 @@ def tacticBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsPa
     IO.println s!"Encountered an issue attempting to run tactic benchmark at {declName} in module {module}"
     return 0
 
+def tacticBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (tac : TacticM Unit) (tacImport : String) (tacType : TacType) : IO UInt32 := do
+  initSearchPath (← findSysroot)
+  let result ← runTacticAtAliasDecl module declName (fun _ => pure true) tacImport tac tacType
+  IO.println s!"Testing on {declName} in {module}"
+  match result with
+  | some (ci, ⟨type, seconds, heartbeats⟩) =>
+    IO.println <| (resultTypeToEmojiString type) ++ s!"({type}) " ++ ci.name.toString ++
+      s!" ({seconds}s) ({heartbeats} heartbeats)"
+    return 0
+  | none =>
+    IO.println s!"Encountered an issue attempting to run tactic benchmark at {declName} in module {module}"
+    return 0
+
 def simpAllBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsDir : String) (jsonDir : String) : IO UInt32 := do
   initSearchPath (← findSysroot)
   let result ← runSimpAllAtDecl module declName (fun ci => try isProp ci.type catch _ => pure false) withImportsDir jsonDir
@@ -981,7 +1104,7 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
 
       | "grindWithRecommendation" => grindBenchmarkAtDecl module declName withImportsPath premisesPath
       | "grind" => tacticBenchmarkAtDecl module declName (some withImportsPath) useGrind TacType.General
-      | "querySMTBlind" => tacticBenchmarkAtDecl module declName (some withImportsPath) useQuerySMTBlind TacType.QuerySMT
+      | "querySMTBlind" => tacticBenchmarkAtAliasDecl module declName useQuerySMTBlind "QuerySMT" TacType.QuerySMT
 
       | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
   catch e =>

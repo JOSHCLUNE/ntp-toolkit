@@ -383,7 +383,3 @@ def runStoreNames := @id (CoreM _) do
   storeNames all s!"minimized_json_files/IntModules.json"
 
 -- #eval runStoreNames
-
-/-
-"gt_hints": {"Prime.dvd_or_dvd": "notInSimpAll", "Multiset.induction_on": "notInSimpAll", "Multiset.mem_cons_of_mem": "notInSimpAll", "Multiset.prod_cons": "notInSimpAll", "Multiset.mem_cons_self": "notInSimpAll", "Prime.not_dvd_one": "notInSimpAll"}}
--/
