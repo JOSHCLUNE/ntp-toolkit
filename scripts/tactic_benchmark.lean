@@ -219,7 +219,7 @@ def runAtDecl (mod : Name) (declName : Name) (withImportsDir : Option String := 
     The temporary file that `runAtAliasDecl` creates imports both `mod` and `tac`. For this, `tacImport` is the string that `runAtAliasDecl` uses to import `tac`. -/
 def runAtAliasDecl {α} (mod : Name) (declName : Name) (tacImport : String) (tac : ConstantInfo → Option Nat → MetaM (Option α)) : IO (Option (ConstantInfo × α)) := do
   FS.withTempFile $ fun fhandle fpath => do
-    let modSource := s!"import {mod}\nimport {tacImport}\nalias {declName}.__eval := {declName}"
+    let modSource := s!"import {mod}\nimport {tacImport}\nalias {declName}__eval := {declName}"
     fhandle.putStrLn modSource
     fhandle.flush
     let fileName := fpath.toString
@@ -990,14 +990,14 @@ def tacticBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsPa
 def tacticBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (tac : TacticM Unit) (tacImport : String) (tacType : TacType) : IO UInt32 := do
   initSearchPath (← findSysroot)
   let result ← runTacticAtAliasDecl module declName (fun _ => pure true) tacImport tac tacType
-  IO.println s!"Testing on {declName} in {module}"
+  IO.println s!"Testing on alias of {declName} in {module}"
   match result with
   | some (ci, ⟨type, seconds, heartbeats⟩) =>
     IO.println <| (resultTypeToEmojiString type) ++ s!"({type}) " ++ ci.name.toString ++
       s!" ({seconds}s) ({heartbeats} heartbeats)"
     return 0
   | none =>
-    IO.println s!"Encountered an issue attempting to run tactic benchmark at {declName} in module {module}"
+    IO.println s!"Encountered an issue attempting to run tactic benchmark at alias decl for {declName} (module: {module})"
     return 0
 
 def simpAllBenchmarkAtDecl (module : ModuleName) (declName : Name) (withImportsDir : String) (jsonDir : String) : IO UInt32 := do
