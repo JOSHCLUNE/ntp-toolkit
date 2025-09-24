@@ -222,7 +222,7 @@ def runAtAliasDecl {α} (mod : Name) (declName : Name) (tacImport : Option Strin
     let modSource :=
       match tacImport with
       | some tacImport => s!"import {mod}\nimport {tacImport}\nalias {declName}__eval := {declName}"
-      | none => s!"import {mod}\n\nalias {declName}__eval := {declName}"
+      | none => s!"import {mod}\nalias {declName}__eval := {declName}"
     fhandle.putStrLn modSource
     fhandle.flush
     let fileName := fpath.toString
