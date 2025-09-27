@@ -118,53 +118,54 @@ def run_benchmark(entry: dict, print_emoji: bool = False) -> dict[str, str]:
     ]
     result_data["command"] = " ".join(command)
     try:
-        result = subprocess.run(
-            command,
-            cwd=ntp_toolkit_path,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=timeout
+        proc = subprocess.Popen(
+          command,
+          cwd=ntp_toolkit_path,
+          text=True,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.STDOUT,
+          timeout=timeout,
+          start_new_session=True
         )
+        result, err = proc.wait(timeout=timeout)
         result_output = "\n".join(
-            line for line in result.stdout.splitlines()
+            line for line in result.splitlines()
             if not any(line.startswith(prefix) for prefix in ["note:", "warning:", "error:", "⚠", "✖", "✔"])
         )
-        match = re.search(r"^([❌️💥️✅️]+) ", result.stdout, flags=re.MULTILINE)
+        match = re.search(r"^([❌️💥️✅️]+) ", result, flags=re.MULTILINE)
         result_emoji = match.group(1) if match else None
         result_outcome = None
-        if "(success)" in result.stdout:
+        if "(success)" in result:
             result_outcome = "success"
-        elif "(failure)" in result.stdout:
+        elif "(failure)" in result:
             result_outcome = "failure"
-        elif "(noJSON)" in result.stdout:
+        elif "(noJSON)" in result:
             result_outcome = "noJSON"
-        elif "(skolemizationFailure)" in result.stdout:
+        elif "(skolemizationFailure)" in result:
             result_outcome = "skolemizationFailure"
-        elif "(smtTranslationFailure)" in result.stdout:
+        elif "(smtTranslationFailure)" in result:
             result_outcome = "smtTranslationFailure"
-        elif "(externalProverFailure)" in result.stdout:
+        elif "(externalProverFailure)" in result:
             result_outcome = "externalProverFailure"
-        elif "(hintParsingFailure)" in result.stdout:
+        elif "(hintParsingFailure)" in result:
             result_outcome = "hintParsingFailure"
-        elif "(selectorConstructionFailure)" in result.stdout:
+        elif "(selectorConstructionFailure)" in result:
             result_outcome = "selectorConstructionFailure"
-        elif "(duperFailure)" in result.stdout:
+        elif "(duperFailure)" in result:
             result_outcome = "duperFailure"
-        elif "(proofFitFailure)" in result.stdout:
+        elif "(proofFitFailure)" in result:
             result_outcome = "proofFitFailure"
-        elif "(miscFailure)" in result.stdout:
+        elif "(miscFailure)" in result:
             result_outcome = "miscFailure"
-        elif "(subgoals)" in result.stdout:
+        elif "(subgoals)" in result:
             result_outcome = "subgoals"
-        elif "(notDefEq)" in result.stdout:
+        elif "(notDefEq)" in result:
             result_outcome = "notDefEq"
     except subprocess.TimeoutExpired as e:
         result_emoji = "⏰"
         result_output = str(e)
         result_outcome = "timeout"
-        result.terminate()
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
     result_data["result_emoji"] = result_emoji
     result_data["result_output"] = result_output
