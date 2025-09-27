@@ -164,6 +164,7 @@ def run_benchmark(entry: dict, print_emoji: bool = False) -> dict[str, str]:
         result_emoji = "⏰"
         result_output = str(e)
         result_outcome = "timeout"
+        result.terminate()
 
     result_data["result_emoji"] = result_emoji
     result_data["result_output"] = result_output
