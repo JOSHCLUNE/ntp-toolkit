@@ -124,7 +124,6 @@ def run_benchmark(entry: dict, print_emoji: bool = False) -> dict[str, str]:
           text=True,
           stdout=subprocess.PIPE,
           stderr=subprocess.STDOUT,
-          timeout=timeout,
           start_new_session=True
         )
         result, err = proc.wait(timeout=timeout)
