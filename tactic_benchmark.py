@@ -126,7 +126,7 @@ def run_benchmark(entry: dict, print_emoji: bool = False) -> dict[str, str]:
           stderr=subprocess.STDOUT,
           start_new_session=True
         )
-        result, err = proc.wait(timeout=timeout)
+        result, err = proc.communicate(timeout=timeout)
         result_output = "\n".join(
             line for line in result.splitlines()
             if not any(line.startswith(prefix) for prefix in ["note:", "warning:", "error:", "⚠", "✖", "✔"])
