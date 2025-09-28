@@ -235,7 +235,7 @@ def runAtAliasDecl {α} (mod : Name) (declName : Name) (tacImport : Option Strin
   FS.withTempFile $ fun fhandle fpath => do
     let modSource :=
       match tacImport with
-      | some tacImport => s!"import {mod}\nimport {tacImport}\nalias {declName}__eval := {declName}"
+      | some tacImport => s!"import {mod}\nimport Batteries.Tactic.Alias\nimport {tacImport}\nalias {declName}__eval := {declName}"
       | none => s!"import {mod}\nimport Batteries.Tactic.Alias\nalias {declName}__eval := {declName}"
     fhandle.putStrLn modSource
     fhandle.flush
