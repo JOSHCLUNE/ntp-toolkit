@@ -499,7 +499,7 @@ def runGrindAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo →
 
 def runAutoAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (jsonDir : String)
   (smtBackend : Bool) : IO (Option (ConstantInfo × GeneralResult)) := do
-  runAtAliasDecl mod declName "Auto" fun ci numArgs? => do
+  runAtAliasDecl mod declName "Duper" fun ci numArgs? => do
     if ! (← decls ci) then return none
     let g ←
       match numArgs? with
