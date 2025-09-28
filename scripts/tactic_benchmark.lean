@@ -44,6 +44,8 @@ def useAuto (hammerRecommendation : Array String) (smtBackend : Bool) : TacticM 
         let o := o.set ``auto.smt.solver.name "cvc5"
         let o := o.set ``auto.native false
         let o := o.set ``auto.smt.dumpHints false
+        let o := o.set ``auto.mono.ignoreNonQuasiHigherOrder true
+        let o := o.set ``auto.smt.ignoreUnusableFacts true
         o
     else
       fun o =>
