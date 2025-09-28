@@ -13,7 +13,7 @@ import Cli
 
 -- This version of tactic_benchmark.lean is compatible with a lakefile that imports querySMT
 
-open Lean Core Elab IO Meta Term Tactic SimpAllHint TheoremPrettyPrinting PremiseSelection -- All the monads!
+open Lean Core Elab IO Meta Term Tactic SimpAllHint TheoremPrettyPrinting PremiseSelection Duper Auto
 
 set_option autoImplicit true
 
@@ -46,6 +46,7 @@ def useAuto (hammerRecommendation : Array String) (smtBackend : Bool) : TacticM 
         let o := o.set ``auto.smt.dumpHints false
         let o := o.set ``auto.mono.ignoreNonQuasiHigherOrder true
         let o := o.set ``auto.smt.ignoreUnusableFacts true
+        let o := o.set ``duper.ignoreUnusableFacts true
         o
     else
       fun o =>
@@ -54,14 +55,25 @@ def useAuto (hammerRecommendation : Array String) (smtBackend : Bool) : TacticM 
         let o := o.set ``auto.native true
         o
   withOptions autoOptions do
-  let hammerRecommendation : Array (TSyntax `Auto.hintelem) ←
-    hammerRecommendation.mapM (fun x => do
-      let [name, _] := x.splitOn ","
-        | throwError "{decl_name%} :: Unable to parse hammerRecommendation {x}"
-      let name := name.drop 1 -- Remove leading left parenthesis
-      `(Auto.hintelem| $(mkIdent name.toName):ident)
-    )
-  evalTactic (← `(tactic| auto [*, $hammerRecommendation,*]))
+    let (_, newGoal) ← (← getMainGoal).intros
+    let [nngoal] ← newGoal.apply (.const ``Classical.byContradiction [])
+      | throwError "{decl_name%} :: Unexpected result after applying Classical.byContradiction"
+    let (_, absurd) ← MVarId.intro1 nngoal
+    replaceMainGoal [absurd]
+    withMainContext do
+      let hammerRecommendation : Array Ident ←
+        hammerRecommendation.mapM (fun x => do
+          let [name, _] := x.splitOn ","
+            | throwError "{decl_name%} :: Unable to parse hammerRecommendation {x}"
+          let name := name.drop 1 -- Remove leading left parenthesis
+          pure (mkIdent name.toName)
+        )
+      let formulas ← collectAssumptions hammerRecommendation true #[] -- `goalDecls` can be safely set to `#[]` because `withAllLCtx` is set to `true`
+      let lemmas ← formulasToAutoLemmas formulas (includeInSetOfSupport := true)
+      let lemmas ← lemmas.mapM (m:=MetaM) (Auto.unfoldConstAndPreprocessLemma #[])
+      let inhFacts ← Auto.Inhabitation.getInhFactsFromLCtx
+      let proof ← runAuto `fake_decl lemmas inhFacts
+      absurd.assign proof
 
 def useSimpAllWithRecommendation (simpAllRecommendation : Array String) : TacticM Unit := do
   let simpAllRecommendation : Array Name := simpAllRecommendation.map String.toName
