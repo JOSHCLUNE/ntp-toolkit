@@ -52,6 +52,32 @@ def useGrindWithRecommendation (hammerRecommendation : Array String) : TacticM U
 def useGrind : TacticM Unit := do
   evalTactic (← `(tactic| grind))
 
+def useAuto (hammerRecommendation : Array String) (smtBackend : Bool) : TacticM Unit := do
+  let autoOptions :=
+    if smtBackend then
+      fun o =>
+        let o := o.set ``auto.tptp false
+        let o := o.set ``auto.smt true
+        let o := o.set ``auto.smt.trust true
+        let o := o.set ``auto.smt.solver.name "cvc5"
+        let o := o.set ``auto.native false
+        o
+    else
+      fun o =>
+        let o := o.set ``auto.tptp false
+        let o := o.set ``auto.smt false
+        let o := o.set ``auto.native true
+        o
+  withOptions autoOptions do
+  let hammerRecommendation : Array (TSyntax `Auto.hintelem) ←
+    hammerRecommendation.mapM (fun x => do
+      let [name, _] := x.splitOn ","
+        | throwError "{decl_name%} :: Unable to parse hammerRecommendation {x}"
+      let name := name.drop 1 -- Remove leading left parenthesis
+      `(Auto.hintelem| $(mkIdent name.toName):ident)
+    )
+  evalTactic (← `(tactic| auto [*, $hammerRecommendation,*]))
+
 /-- This function is intended to achieve the same result as `runAtDecl`, but instead of running `tac` with exactly the environment produced by the original declaration,
     `runAtAliasDecl` creates an alias for `declName` and runs `tac` on that. This is used for declarations that `tac` itself depends on (because `runAtDecl` only works
     when `tac`'s dependencies have already been imported, attempting to use `runAtDecl` for a declaration that `tac` depends on will result in a circular dependency).
@@ -313,6 +339,52 @@ def runGrindAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo →
         pure .failure
     return some ⟨res, seconds, heartbeats⟩
 
+def runAutoAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (jsonDir : String)
+  (smtBackend : Bool) : IO (Option (ConstantInfo × GeneralResult)) := do
+  runAtAliasDecl mod declName "Auto" fun ci numArgs? => do
+    if ! (← decls ci) then return none
+    let g ←
+      match numArgs? with
+      | some numArgs =>
+        let g ← mkFreshExprMVar ci.type
+        let (_, g) ← g.mvarId!.introNP numArgs -- Introduce universal binders corresponding to arguments of the theorem
+        pure g
+      | none => return none -- Only run the tactic on theorems
+    -- Find JSON file corresponding to current `mod`
+    let fileName := (← findJSONFile mod jsonDir).toString
+    let jsonObjects ← IO.FS.lines fileName
+    let json ← IO.ofExcept $ jsonObjects.mapM Json.parse
+    -- Find `declHammerRecommendation` corresponding to current `ci`
+    let mut ciEntry := Json.null
+    for jsonEntry in json do
+      let jsonDeclName ← IO.ofExcept $ jsonEntry.getObjVal? "declName"
+      let curDeclName ← IO.ofExcept $ jsonDeclName.getStr?
+      if s!"{curDeclName}__eval" == s!"{ci.name}" then
+        ciEntry := jsonEntry
+        dbg_trace "Found jsonEntry for {declName}"
+        break
+    if ciEntry.isNull then
+      return some ⟨.noJSON, 0.0, 0⟩
+    let recommendation ← IO.ofExcept $ ciEntry.getObjVal? "declHammerRecommendation"
+    let recommendation ← IO.ofExcept $ recommendation.getArr?
+    let recommendation ← IO.ofExcept $ recommendation.mapM Json.getStr?
+    let ((res, heartbeats), seconds) ← withSeconds <| withHeartbeats <|
+      try
+        TermElabM.run' (do
+          dbg_trace "About to use Auto with premises for {ci.name} in module {mod} (recommendation: {recommendation})"
+          let gs ← Tactic.run g $ useAuto recommendation smtBackend
+          dbg_trace "Successfully called Auto"
+          match gs with
+          | [] => pure .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate on Prop declarations
+          | _ :: _ =>
+            dbg_trace "{decl_name%} Subgoals case"
+            pure .subgoals)
+          (ctx := {declName? := `fakeDecl, errToSorry := false})
+      catch e =>
+        dbg_trace "{decl_name%} :: failure for {ci.name} in module {mod}: {← e.toMessageData.toString}"
+        pure .failure
+    return some ⟨res, seconds, heartbeats⟩
+
 def runLeanSMTAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (jsonDir : String)
   : IO (Option (ConstantInfo × GeneralResult)) := do
   runAtAliasDecl mod declName "Smt" fun ci numArgs? => do
@@ -439,7 +511,18 @@ def grindBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir :
     IO.println $ generalResultTypeToEmojiString type ++ " " ++ ci.name.toString ++ s!" ({seconds}s) ({heartbeats} heartbeats)"
     return 0
   | none =>
-    IO.println s!"Encountered an issue attempting to run grind benchmark at {declName} in module {module}"
+    IO.println s!"Encountered an issue attempting to run grind benchmark at alias decl for {declName} (module: {module})"
+    return 0
+
+def autoBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir : String) (smtBackend : Bool) : IO UInt32 := do
+  initSearchPath (← findSysroot)
+  let result ← runAutoAtAliasDecl module declName (fun ci => try isProp ci.type catch _ => pure false) jsonDir smtBackend
+  match result with
+  | some (ci, ⟨type, seconds, heartbeats⟩) =>
+    IO.println $ (generalResultTypeToEmojiString type) ++ s!"({type}) " ++ ci.name.toString ++ s!" ({seconds}s) ({heartbeats} heartbeats)"
+    return 0
+  | none =>
+    IO.println s!"Encountered an issue attempting to run Auto benchmark at alias decl for {declName} (module: {module})"
     return 0
 
 def leanSMTBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir : String) : IO UInt32 := do
@@ -464,6 +547,7 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       | "grindWithRecommendation" => grindBenchmarkAtAliasDecl module declName premisesPath
       | "grind" => tacticBenchmarkAtAliasDecl module declName useGrind none TacType.General
       | "leanSMT" => leanSMTBenchmarkAtAliasDecl module declName premisesPath
+      | "autoSMT" => autoBenchmarkAtAliasDecl module declName premisesPath true
 
       | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
   catch e =>
