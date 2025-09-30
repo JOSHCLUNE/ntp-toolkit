@@ -105,18 +105,16 @@ def evalHintReconstruction (hammerRecommendation : Array String) : TacticM Unit 
           let name := name.drop 1 -- Remove leading left parenthesis
           pure (mkIdent name.toName)
         )
-      let formulas ← collectAssumptions hammerRecommendation true #[] -- `goalDecls` can be safely set to `#[]` because `withAllLCtx` is set to `true`
-      let lemmas ← formulasToAutoLemmas formulas (includeInSetOfSupport := true)
-      let lemmas ← lemmas.mapM (m:=MetaM) (Auto.unfoldConstAndPreprocessLemma #[])
-      let inhFacts ← Auto.Inhabitation.getInhFactsFromLCtx
-      let (_, selectorInfos, lemmas) ←
+      let (selectorInfos, lemmas) ←
         try
-          runAutoGetHints lemmas inhFacts
+          let formulas ← collectAssumptions hammerRecommendation true #[] -- `goalDecls` can be safely set to `#[]` because `withAllLCtx` is set to `true`
+          let lemmas ← formulasToAutoLemmas formulas (includeInSetOfSupport := true)
+          let lemmas ← lemmas.mapM (m:=MetaM) (Auto.unfoldConstAndPreprocessLemma #[])
+          let inhFacts ← Auto.Inhabitation.getInhFactsFromLCtx
+          let (_, selectorInfos, lemmas) ← runAutoGetHints lemmas inhFacts
+          pure (selectorInfos, lemmas)
         catch _ =>
-          -- If auto's translation fails or the external prover fails to find a goal, `evalHintReconstruction` should succeed
-          let proof ← Meta.mkAppM ``sorryAx #[Expr.const ``False [], Expr.const ``false []]
-          let finalGoal ← getMainGoal -- Need to update main goal because running evalTactic to add selectors can change the main goal
-          finalGoal.assign proof
+          -- If anything goes wrong at this stage prior to calling `grind` on `cvc5`'s hints `evalHintReconstruction` should succeed
           return
 
       IO.println s!"Auto found hints."
