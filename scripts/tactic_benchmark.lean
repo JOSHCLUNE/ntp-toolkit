@@ -115,6 +115,7 @@ def evalHintReconstruction (hammerRecommendation : Array String) : TacticM Unit 
           pure (selectorInfos, lemmas)
         catch _ =>
           -- If anything goes wrong at this stage prior to calling `grind` on `cvc5`'s hints `evalHintReconstruction` should succeed
+          evalTactic $ ← `(tactic| sorry)
           return
 
       IO.println s!"Auto found hints."
