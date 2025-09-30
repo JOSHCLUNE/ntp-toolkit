@@ -150,6 +150,7 @@ def evalHintReconstruction (hammerRecommendation : Array String) : TacticM Unit 
           allLemmas.mapM (fun lemExp => withOptions ppOptionsSetting $ PrettyPrinter.delab lemExp)
         for lemmaStx in lemmasStx do
           evalTactic $ ← `(tactic| have : $lemmaStx := by grind)
+        dbg_trace "{decl_name%} :: Grind successfully verified {lemmasStx.length} hints"
       let proof ← Meta.mkAppM ``sorryAx #[Expr.const ``False [], Expr.const ``false []]
       let finalGoal ← getMainGoal -- Need to update main goal because running evalTactic to add selectors can change the main goal
       finalGoal.assign proof
