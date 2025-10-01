@@ -75,87 +75,6 @@ def useAuto (hammerRecommendation : Array String) (smtBackend : Bool) : TacticM 
       let proof ← runAuto `fake_decl lemmas inhFacts
       absurd.assign proof
 
-/-- This is used to check whether `grind` can successfully prove all of the lemmas output by cvc5. `evalHintReconstruction` should succeed if
-    lean-auto fails to translate the goal, if `cvc5` fails to find a proof, or if `grind` succeeds in proving all of the hints output by `cvc5`.
-    `evalHintReconstruction` should fail if there are any hints that `grind` fails to prove. -/
-def evalHintReconstruction (hammerRecommendation : Array String) : TacticM Unit := do
-  let autoOptions :=
-    fun o =>
-      let o := o.set ``auto.tptp false
-      let o := o.set ``auto.smt true
-      let o := o.set ``auto.smt.trust true
-      let o := o.set ``auto.smt.solver.name "cvc5"
-      let o := o.set ``auto.native false
-      let o := o.set ``auto.smt.dumpHints false
-      let o := o.set ``auto.mono.ignoreNonQuasiHigherOrder true
-      let o := o.set ``auto.smt.ignoreUnusableFacts true
-      let o := o.set ``duper.ignoreUnusableFacts true
-      o
-  withOptions autoOptions do
-    let (_, newGoal) ← (← getMainGoal).intros
-    let [nngoal] ← newGoal.apply (.const ``Classical.byContradiction [])
-      | throwError "{decl_name%} :: Unexpected result after applying Classical.byContradiction"
-    let (_, absurd) ← MVarId.intro1 nngoal
-    replaceMainGoal [absurd]
-    withMainContext do
-      let hammerRecommendation : Array Ident ←
-        hammerRecommendation.mapM (fun x => do
-          let [name, _] := x.splitOn ","
-            | throwError "{decl_name%} :: Unable to parse hammerRecommendation {x}"
-          let name := name.drop 1 -- Remove leading left parenthesis
-          pure (mkIdent name.toName)
-        )
-      let (selectorInfos, lemmas) ←
-        try
-          let formulas ← collectAssumptions hammerRecommendation true #[] -- `goalDecls` can be safely set to `#[]` because `withAllLCtx` is set to `true`
-          let lemmas ← formulasToAutoLemmas formulas (includeInSetOfSupport := true)
-          let lemmas ← lemmas.mapM (m:=MetaM) (Auto.unfoldConstAndPreprocessLemma #[])
-          let inhFacts ← Auto.Inhabitation.getInhFactsFromLCtx
-          let (_, selectorInfos, lemmas) ← runAutoGetHints lemmas inhFacts
-          pure (selectorInfos, lemmas)
-        catch _ =>
-          -- If anything goes wrong at this stage prior to calling `grind` on `cvc5`'s hints `evalHintReconstruction` should succeed
-          dbg_trace "{decl_name%} :: hintEval succeeds vacuously because runAutoGetHints failed"
-          evalTactic $ ← `(tactic| sorry)
-          return
-
-      IO.println s!"Auto found hints."
-      let allLemmas :=
-        lemmas.1 ++ lemmas.2.1 ++ lemmas.2.2.1 ++ lemmas.2.2.2.1 ++ lemmas.2.2.2.2.1 ++
-        (lemmas.2.2.2.2.2.foldl (fun acc l => acc ++ l) [])
-      if allLemmas.length = 0 then
-        IO.println "SMT solver did not generate any theory lemmas"
-      else
-        for (selName, selCtor, argIdx, selType) in selectorInfos do
-          let selFactName := selName ++ "Fact"
-          let selector ← buildSelector selCtor argIdx
-          let selectorStx ← withOptions ppOptionsSetting $ PrettyPrinter.delab selector
-          let selectorFact ← buildSelectorFact selName selCtor selType argIdx
-          let selectorFactStx ← withOptions ppOptionsSetting $ PrettyPrinter.delab selectorFact
-          let existsIntroStx ← withOptions ppOptionsSetting $ PrettyPrinter.delab (mkConst ``Exists.intro)
-          evalTactic $ -- Eval to add selector and its corresponding fact to lctx
-            ← `(tactic|
-                have ⟨$(mkIdent (.str .anonymous selName)), $(mkIdent (.str .anonymous selFactName))⟩ : $selectorFactStx:term := by
-                  apply $existsIntroStx:term $selectorStx:term
-                  intros
-                  rfl
-              )
-        let lemmasStx ← withMainContext do -- Use updated main context so that newly added selectors are accessible
-          let lctx ← getLCtx
-          let mut selectorFVars := #[]
-          for (selUserName, _, _, _) in selectorInfos do
-            match lctx.findFromUserName? (.str .anonymous selUserName) with
-            | some decl => selectorFVars := selectorFVars.push (.fvar decl.fvarId)
-            | none => throwError "{decl_name%} :: Error in trying to access selector definition for {selUserName}"
-          let allLemmas := allLemmas.map (fun lem => lem.instantiateRev selectorFVars)
-          allLemmas.mapM (fun lemExp => withOptions ppOptionsSetting $ PrettyPrinter.delab lemExp)
-        for lemmaStx in lemmasStx do
-          evalTactic $ ← `(tactic| have : $lemmaStx := by grind)
-        dbg_trace "{decl_name%} :: Grind successfully verified {lemmasStx.length} hints"
-      let proof ← Meta.mkAppM ``sorryAx #[Expr.const ``False [], Expr.const ``false []]
-      let finalGoal ← getMainGoal -- Need to update main goal because running evalTactic to add selectors can change the main goal
-      finalGoal.assign proof
-
 def useSimpAllWithRecommendation (simpAllRecommendation : Array String) : TacticM Unit := do
   let simpAllRecommendation : Array Name := simpAllRecommendation.map String.toName
   let simpAllRecommendation : Array Ident := simpAllRecommendation.map mkIdent
@@ -173,6 +92,17 @@ def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : N
         pure (mkIdent name.toName)
       )
     evalTactic (← `(tactic| querySMT [*, $hammerRecommendation,*]))
+
+def useQuerySMTCheckHintReconstruction (hammerRecommendation : Array String) (externalProverTimeout : Nat) : TacticM Unit := do
+  withOptions (fun o => ((o.set ``auto.tptp.timeout externalProverTimeout).set ``duper.maxSaturationTime externalProverTimeout)) do
+    let hammerRecommendation : Array Ident ←
+      hammerRecommendation.mapM (fun x => do
+        let [name, _] := x.splitOn ","
+          | throwError "{decl_name%} :: Unable to parse hammerRecommendation {x}"
+        let name := name.drop 1 -- Remove leading left parenthesis
+        pure (mkIdent name.toName)
+      )
+    evalTactic (← `(tactic| querySMTCheckHintReconstruction [*, $hammerRecommendation,*]))
 
 def useQuerySMTBlind : TacticM Unit := do
   evalTactic (← `(tactic| querySMT [*]))
@@ -624,9 +554,9 @@ def runAutoAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → 
         pure .failure
     return some ⟨res, seconds, heartbeats⟩
 
-def runHintEvalAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (jsonDir : String)
+def runHintEvalAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (jsonDir : String) (externalProverTimeout : Nat)
   : IO (Option (ConstantInfo × GeneralResult)) := do
-  runAtAliasDecl mod declName "Duper" fun ci numArgs? => do
+  runAtAliasDecl mod declName "QuerySMT" fun ci numArgs? => do
     if ! (← decls ci) then return none
     let g ←
       match numArgs? with
@@ -657,7 +587,7 @@ def runHintEvalAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo 
       try
         TermElabM.run' (do
           dbg_trace "About to use evaluate hint reconstruction for {ci.name} in module {mod} (recommendation: {recommendation})"
-          let gs ← Tactic.run g $ evalHintReconstruction recommendation
+          let gs ← Tactic.run g $ useQuerySMTCheckHintReconstruction recommendation externalProverTimeout
           dbg_trace "Successfully evaluated hint reconstruction"
           match gs with
           | [] => pure .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate on Prop declarations
@@ -821,9 +751,9 @@ def autoBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir : 
     IO.println s!"Encountered an issue attempting to run Auto benchmark at alias decl for {declName} (module: {module})"
     return 0
 
-def hintEvalBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir : String) : IO UInt32 := do
+def hintEvalBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir : String) (externalProverTimeout : Nat) : IO UInt32 := do
   initSearchPath (← findSysroot)
-  let result ← runHintEvalAtAliasDecl module declName (fun ci => try isProp ci.type catch _ => pure false) jsonDir
+  let result ← runHintEvalAtAliasDecl module declName (fun ci => try isProp ci.type catch _ => pure false) jsonDir externalProverTimeout
   match result with
   | some (ci, ⟨type, seconds, heartbeats⟩) =>
     IO.println $ (generalResultTypeToEmojiString type) ++ s!"({type}) " ++ ci.name.toString ++ s!" ({seconds}s) ({heartbeats} heartbeats)"
@@ -863,7 +793,7 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       | "querySMTBlind" => tacticBenchmarkAtAliasDecl module declName useQuerySMTBlind "QuerySMT" TacType.QuerySMT
 
       | "autoSMT" => autoBenchmarkAtAliasDecl module declName premisesPath true
-      | "hintEval" => hintEvalBenchmarkAtAliasDecl module declName premisesPath
+      | "hintEval" => hintEvalBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout
 
       | _ => IO.throwServerError s!"Unknown benchmark type {benchmarkType}"
   catch e =>
