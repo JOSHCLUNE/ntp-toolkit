@@ -589,11 +589,7 @@ def runHintEvalAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo 
           dbg_trace "About to use evaluate hint reconstruction for {ci.name} in module {mod} (recommendation: {recommendation})"
           let gs ← Tactic.run g $ useQuerySMTCheckHintReconstruction recommendation externalProverTimeout
           dbg_trace "Successfully evaluated hint reconstruction"
-          match gs with
-          | [] => pure .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate on Prop declarations
-          | _ :: _ =>
-            dbg_trace "{decl_name%} Subgoals case"
-            pure .subgoals)
+          pure .success) -- Don't need to case on `gs` because the only thing `runHintEval` needs to check is whether the tactic threw an error
           (ctx := {declName? := `fakeDecl, errToSorry := false})
       catch e =>
         dbg_trace "{decl_name%} :: failure for {ci.name} in module {mod}: {← e.toMessageData.toString}"
