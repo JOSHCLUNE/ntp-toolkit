@@ -528,14 +528,11 @@ def runGrindAtDecl (mod : Name) (declName : Name) (decls : ConstantInfo → Meta
     for jsonEntry in json do
       let jsonDeclName ← IO.ofExcept $ jsonEntry.getObjVal? "declName"
       let curDeclName ← IO.ofExcept $ jsonDeclName.getStr?
-      if s!"{curDeclName}__eval" == s!"{ci.name}" then
+      if curDeclName == s!"{ci.name}" then
         ciEntry := jsonEntry
         dbg_trace "Found jsonEntry for {declName}"
         break
     if ciEntry.isNull then
-      dbg_trace s!"No jsonEntry found for {declName} in module {mod}"
-      dbg_trace s!"JSON file: {fileName}"
-      dbg_trace s!"JSON entries: {json}"
       return some ⟨.noJSON, 0.0, 0⟩
     let recommendation ← IO.ofExcept $ ciEntry.getObjVal? "declHammerRecommendation"
     let recommendation ← IO.ofExcept $ recommendation.getArr?
