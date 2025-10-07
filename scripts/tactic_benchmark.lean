@@ -876,9 +876,6 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
 
   try
     match benchmarkType with
-      | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false true false
-      | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true true false false true true false true false
-
       /-
       (ignoreHints : Bool) -- `false` is the current default
       (includeSMTHintsInSetOfSupport : Bool) -- `true` is the current default
@@ -890,6 +887,8 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       (includeDatatypeRules : Bool) -- `true` is the current default
       (collectDatatypes : Bool) -- `false` is the current default
       -/
+      | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false true false
+      | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true true false false true true false true false
       | "querySMT_excludeHintsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false true false
       | "querySMT_removeAllCastingFacts" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true true false true true false true false
       | "querySMT_includeCastingFactsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false true true true false true false
