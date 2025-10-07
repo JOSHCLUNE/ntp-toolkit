@@ -886,7 +886,8 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       (disableExpensiveRules : Bool) -- `false` is the current default
       -/
       | "querySMT_excludeHintsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false false
-      | "querySMT_includeCastingFactsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false true true true false false
+      | "querySMT_includeCastingFactsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false true true true false false
+      | "querySMT_removeAllCastingFacts" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false
 
       | "grindWithRecommendation" => grindBenchmarkAtAliasDecl module declName premisesPath
       | "grind" => tacticBenchmarkAtAliasDecl module declName useGrind none TacType.General
