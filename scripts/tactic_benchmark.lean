@@ -84,7 +84,7 @@ def useSimpAllWithRecommendation (simpAllRecommendation : Array String) : Tactic
 
 def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : Nat)
   (ignoreHints : Bool) -- `false` is the current default
-  (includeSMTHintsInSetOfSupport : Bool) -- `false` is the current default
+  (includeSMTHintsInSetOfSupport : Bool) -- `true` is the current default
   (removeAllCastingFacts : Bool) -- `false` is the current default
   (includeCastingFactsInSetOfSupport : Bool) -- `false` is the current default
   (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
@@ -657,7 +657,7 @@ def runHintEvalAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo 
 
 def runQuerySMTAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo → MetaM Bool) (jsonDir : String) (externalProverTimeout : Nat)
   (ignoreHints : Bool) -- `false` is the current default
-  (includeSMTHintsInSetOfSupport : Bool) -- `false` is the current default
+  (includeSMTHintsInSetOfSupport : Bool) -- `true` is the current default
   (removeAllCastingFacts : Bool) -- `false` is the current default
   (includeCastingFactsInSetOfSupport : Bool) -- `false` is the current default
   (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
@@ -840,7 +840,7 @@ def hintEvalBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDi
 
 def querySMTBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDir : String) (externalProverTimeout : Nat)
   (ignoreHints : Bool) -- `false` is the current default
-  (includeSMTHintsInSetOfSupport : Bool) -- `false` is the current default
+  (includeSMTHintsInSetOfSupport : Bool) -- `true` is the current default
   (removeAllCastingFacts : Bool) -- `false` is the current default
   (includeCastingFactsInSetOfSupport : Bool) -- `false` is the current default
   (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
@@ -872,10 +872,10 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
 
   try
     match benchmarkType with
-      | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false false
-      | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true false false false true true false false
+      | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false
+      | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true true false false true true false false
 
-      | "querySMT_includeHintsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false
+      | "querySMT_excludeHintsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false false
 
       | "grindWithRecommendation" => grindBenchmarkAtAliasDecl module declName premisesPath
       | "grind" => tacticBenchmarkAtAliasDecl module declName useGrind none TacType.General
