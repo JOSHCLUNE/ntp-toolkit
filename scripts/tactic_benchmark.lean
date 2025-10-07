@@ -90,7 +90,8 @@ def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : N
   (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
   (includeNonUnitFacts : Bool) -- `true` is the current default
   (includeACFacts : Bool) -- `false` is the current default
-  (disableExpensiveRules : Bool) -- `false` is the current default
+  (includeDatatypeRules : Bool) -- `true` is the current default
+  (collectDatatypes : Bool) -- `false` is the current default
   : TacticM Unit := do
   withOptions (fun o => o.set ``querySMT.includeSMTHintsInSetOfSupport includeSMTHintsInSetOfSupport) do
   withOptions (fun o => o.set ``querySMT.removeAllCastingFacts removeAllCastingFacts) do
@@ -98,7 +99,8 @@ def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : N
   withOptions (fun o => o.set ``querySMT.includeSuppliedFactsInSetOfSupport includeSuppliedFactsInSetOfSupport) do
   withOptions (fun o => o.set ``querySMT.includeNonUnitFacts includeNonUnitFacts) do
   withOptions (fun o => o.set ``querySMT.includeACFacts includeACFacts) do
-  withOptions (fun o => o.set ``querySMT.disableExpensiveRules disableExpensiveRules) do
+  withOptions (fun o => o.set ``Duper.RuleM.includeDatatypeRules includeDatatypeRules) do
+  withOptions (fun o => o.set ``duper.collectDatatypes collectDatatypes) do
   withOptions (fun o => ((o.set ``auto.tptp.timeout externalProverTimeout).set ``duper.maxSaturationTime externalProverTimeout).set ``querySMT.ignoreHints ignoreHints) do
     let hammerRecommendation : Array Ident ←
       hammerRecommendation.mapM (fun x => do
@@ -663,7 +665,8 @@ def runQuerySMTAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo 
   (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
   (includeNonUnitFacts : Bool) -- `true` is the current default
   (includeACFacts : Bool) -- `false` is the current default
-  (disableExpensiveRules : Bool) -- `false` is the current default
+  (includeDatatypeRules : Bool) -- `true` is the current default
+  (collectDatatypes : Bool) -- `false` is the current default
   : IO (Option (ConstantInfo × QuerySMTResult)) := do
   runAtAliasDecl mod declName "QuerySMT" fun ci numArgs? => do
     if ! (← decls ci) then return none
@@ -698,7 +701,7 @@ def runQuerySMTAtAliasDecl (mod : Name) (declName : Name) (decls : ConstantInfo 
           dbg_trace "About to use querySMT with premises for {ci.name} in module {mod} (recommendation: {recommendation})"
           let gs ← Tactic.run g $
             useQuerySMT recommendation externalProverTimeout ignoreHints includeSMTHintsInSetOfSupport removeAllCastingFacts
-              includeCastingFactsInSetOfSupport includeSuppliedFactsInSetOfSupport includeNonUnitFacts includeACFacts disableExpensiveRules
+              includeCastingFactsInSetOfSupport includeSuppliedFactsInSetOfSupport includeNonUnitFacts includeACFacts includeDatatypeRules collectDatatypes
           dbg_trace "Successfully called querySMT"
           match gs with
           | [] => pure .success -- Don't need to case on whether `ci.type` is a Prop because we only evaluate on Prop declarations
@@ -846,12 +849,13 @@ def querySMTBenchmarkAtAliasDecl (module : ModuleName) (declName : Name) (jsonDi
   (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
   (includeNonUnitFacts : Bool) -- `true` is the current default
   (includeACFacts : Bool) -- `false` is the current default
-  (disableExpensiveRules : Bool) -- `false` is the current default
+  (includeDatatypeRules : Bool) -- `true` is the current default
+  (collectDatatypes : Bool) -- `false` is the current default
   : IO UInt32 := do
   initSearchPath (← findSysroot)
   let result ← runQuerySMTAtAliasDecl module declName (fun ci => try isProp ci.type catch _ => pure false) jsonDir
     externalProverTimeout ignoreHints includeSMTHintsInSetOfSupport removeAllCastingFacts includeCastingFactsInSetOfSupport includeSuppliedFactsInSetOfSupport
-    includeNonUnitFacts includeACFacts disableExpensiveRules
+    includeNonUnitFacts includeACFacts includeDatatypeRules collectDatatypes
   match result with
   | some (ci, ⟨type, seconds, heartbeats⟩) =>
     IO.println $ (querySMTResultTypeToEmojiString type) ++ s!"({type}) " ++ ci.name.toString ++ s!" ({seconds}s) ({heartbeats} heartbeats)"
@@ -872,8 +876,8 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
 
   try
     match benchmarkType with
-      | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false
-      | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true true false false true true false false
+      | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false true false
+      | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true true false false true true false true false
 
       /-
       (ignoreHints : Bool) -- `false` is the current default
@@ -883,11 +887,17 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
       (includeNonUnitFacts : Bool) -- `true` is the current default
       (includeACFacts : Bool) -- `false` is the current default
-      (disableExpensiveRules : Bool) -- `false` is the current default
+      (includeDatatypeRules : Bool) -- `true` is the current default
+      (collectDatatypes : Bool) -- `false` is the current default
       -/
-      | "querySMT_excludeHintsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false false
-      | "querySMT_includeCastingFactsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false true true true false false
-      | "querySMT_removeAllCastingFacts" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false
+      | "querySMT_excludeHintsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false true false
+      | "querySMT_removeAllCastingFacts" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true true false true true false true false
+      | "querySMT_includeCastingFactsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false true true true false true false
+      | "querySMT_excludeSuppliedFactsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false false true false true false
+      | "querySMT_removeNonUnitFacts" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true false false true false
+      | "querySMT_includeACFacts" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true true true false
+      | "querySMT_excludeDatatypeRules" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false false
+      | "querySMT_collectDatatypes" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false true true
 
       | "grindWithRecommendation" => grindBenchmarkAtAliasDecl module declName premisesPath
       | "grind" => tacticBenchmarkAtAliasDecl module declName useGrind none TacType.General
