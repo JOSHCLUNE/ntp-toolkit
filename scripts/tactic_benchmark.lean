@@ -875,7 +875,18 @@ def tacticBenchmarkMain (args : Cli.Parsed) : IO UInt32 := do
       | "querySMT" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false true false false true true false false
       | "querySMT_ignoreHints" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout true true false false true true false false
 
+      /-
+      (ignoreHints : Bool) -- `false` is the current default
+      (includeSMTHintsInSetOfSupport : Bool) -- `true` is the current default
+      (removeAllCastingFacts : Bool) -- `false` is the current default
+      (includeCastingFactsInSetOfSupport : Bool) -- `false` is the current default
+      (includeSuppliedFactsInSetOfSupport : Bool) -- `true` is the current default
+      (includeNonUnitFacts : Bool) -- `true` is the current default
+      (includeACFacts : Bool) -- `false` is the current default
+      (disableExpensiveRules : Bool) -- `false` is the current default
+      -/
       | "querySMT_excludeHintsFromSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false false true true false false
+      | "querySMT_includeCastingFactsInSetOfSupport" => querySMTBenchmarkAtAliasDecl module declName premisesPath externalProverTimeout false false false true true true false false
 
       | "grindWithRecommendation" => grindBenchmarkAtAliasDecl module declName premisesPath
       | "grind" => tacticBenchmarkAtAliasDecl module declName useGrind none TacType.General
