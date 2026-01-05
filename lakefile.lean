@@ -16,7 +16,7 @@ require mathlib from git
   "https://github.com/leanprover-community/mathlib4.git" @ "v4.22.0"
 
 require QuerySMT from git
-  "https://github.com/JOSHCLUNE/LeanSMTParser.git" @ "b694a648c953456cece1771d0589e5278fb0421f"
+  "https://github.com/JOSHCLUNE/LeanSMTParser.git" @ "ed2a49e778b3d39a6d752e94954697d6e666731b"
 
 -- require smt from git "https://github.com/ufmg-smite/lean-smt.git" @ "a79af6cf74b9c4ad3bfb755813fa856f7f41fa9e"
 

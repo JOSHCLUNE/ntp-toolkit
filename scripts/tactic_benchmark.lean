@@ -93,6 +93,7 @@ def useQuerySMT (hammerRecommendation : Array String) (externalProverTimeout : N
   (includeDatatypeRules : Bool) -- `true` is the current default
   (collectDatatypes : Bool) -- `false` is the current default
   : TacticM Unit := do
+  withOptions (fun o => o.set ``querySMT.printHintNumbers true) do
   withOptions (fun o => o.set ``querySMT.includeSMTHintsInSetOfSupport includeSMTHintsInSetOfSupport) do
   withOptions (fun o => o.set ``querySMT.removeAllCastingFacts removeAllCastingFacts) do
   withOptions (fun o => o.set ``querySMT.includeCastingFactsInSetOfSupport includeCastingFactsInSetOfSupport) do
