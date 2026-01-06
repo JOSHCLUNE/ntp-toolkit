@@ -375,8 +375,16 @@ def Name.isHumanTheorem (name : Name) : CoreM Bool := do
   return hasDeclRange && isTheorem && notProjFn
 
 def runStoreNames := @id (CoreM _) do
-  let all ← Name.getConstsOfModules intModules
-  let all ← all.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
-  storeNames all s!"minimized_json_files/IntModules.json"
+  let intConsts ← Name.getConstsOfModules intModules
+  let intConsts ← intConsts.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
+  storeNames intConsts s!"../replicated_data/minimized_json_files/IntModules.json"
 
--- #eval runStoreNames
+  let natConsts ← Name.getConstsOfModules natModules
+  let natConsts ← natConsts.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
+  storeNames natConsts s!"../replicated_data/minimized_json_files/NatModules.json"
+
+  let listConsts ← Name.getConstsOfModules listModules
+  let listConsts ← listConsts.filterM (fun (n, _) => do pure (← Name.isHumanTheorem n))
+  storeNames listConsts s!"../replicated_data/minimized_json_files/ListModules.json"
+
+#eval runStoreNames

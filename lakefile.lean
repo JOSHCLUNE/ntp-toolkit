@@ -82,8 +82,7 @@ lean_exe add_premises where
   root := `scripts.add_premises
   supportInterpreter := true
 
--- @[default_target]
--- lean_lib scripts.collect_minimized_json_files
+lean_lib scripts.collect_minimized_json_files
 
 -- The below version of tactic_benchmark is for when querySMT is imported
 @[default_target]
