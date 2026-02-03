@@ -88,8 +88,11 @@ def getInvocationTrees (trees : List InfoTree) : IO (List InfoTree) := do
 
 namespace Lean.Elab.TacticInvocation
 
-/-- A variable that, when set to true, disables some of the changes that were made to improve performance. -/
-def useNaiveDataExtraction := false
+/-- Variables that, when set to true, disables some of the changes that were made to improve performance. -/
+-- def useNaiveDataExtraction := false
+def useNaivePrettyPrinting := false
+def useNaiveBlacklist := false
+def useNaiveCollection := false -- When set to `true`, disables the collection of premises from `simp` and `rw` calls
 
 def tacticPP (module : ModuleName) (i: TacticInvocation) : IO String := do
   return (Substring.mk (← moduleSource module)
@@ -214,7 +217,7 @@ def mergeHammerRecommendations (hammerRecommendation1 hammerRecommendation2 : St
     simprocs, though it may make sense to update this to include output pertaining to simprocs in the future. `simpLemmasFromTacticStx` ignores all
     lemmas that appear in the hammer blacklist. -/
 def simpLemmasFromTacticStx (s : Syntax) : MetaM (Std.HashMap Name SimpAllHint) := do
-  if useNaiveDataExtraction then return Std.HashMap.empty -- If `useNaiveDataExtraction` is enabled, then we don't gather any simp lemmas
+  if useNaiveCollection then return Std.HashMap.empty -- If `useNaiveDataExtraction` is enabled, then we don't gather any simp lemmas
   match s with
   | `(tactic| simp [$simpLemmas,*])
   | `(tactic| simp? [$simpLemmas,*])
@@ -294,7 +297,7 @@ def simpLemmasFromTacticStx (s : Syntax) : MetaM (Std.HashMap Name SimpAllHint) 
     This function returns the set of rewrite lemmas that appear in the tactic syntax (and annotates them with `unmodified`, `backwardOnly`, or `notInSimpAll`),
     starting for the initial hashmap `hammerRecommendation` -/
 def rwLemmasFromTacticStx (s : Syntax) (hammerRecommendation : Std.HashMap Name SimpAllHint) : MetaM (Std.HashMap Name SimpAllHint) := do
-  if useNaiveDataExtraction then return hammerRecommendation -- If `useNaiveDataExtraction` is enabled, then we don't gather any lemmas from `rw` syntax
+  if useNaiveCollection then return hammerRecommendation -- If `useNaiveDataExtraction` is enabled, then we don't gather any lemmas from `rw` syntax
   match s with
   | `(tactic| simp_rw $rws:rwRuleSeq) =>
     -- Code for iterating through `rws` adapted from `Mathlib.Tactic.withSimpRWRulesSeq`
@@ -340,7 +343,7 @@ def trainingDataGivenTactic (elabDeclInfo : ElabDeclInfo) (module : ModuleName) 
   let declUpToTactic := Substring.mk (← moduleSource module)
     (elabDeclInfo.snd.stx.getPos?.getD 0) (i.info.stx.getPos?.getD 0)
 
-  let state := (Format.joinSep (← i.goalState (optimizeOptions := !useNaiveDataExtraction)) "\n").pretty
+  let state := (Format.joinSep (← i.goalState (optimizeOptions := !useNaivePrettyPrinting)) "\n").pretty
 
   let nextTactic ← tacticPP module i
 
@@ -357,7 +360,7 @@ def trainingDataGivenTactic (elabDeclInfo : ElabDeclInfo) (module : ModuleName) 
         termConstantsNameSet := termConstantsNameSet.append $ unfoldConstantName constName constantsMap Name.isAuxLemma
       let termConstants := termConstantsNameSet.toArray
       -- Filter `termConstants` to only included constants that are lemmas (i.e. Prop-typed) and not blacklisted
-      let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && (useNaiveDataExtraction || !isBlackListed s!"{n}")))
+      let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && (useNaiveBlacklist || !isBlackListed s!"{n}")))
       -- Build `hammerRecommendation` starting with any `simp` lemmas that appear in the tactic stx (not including blacklisted lemmas)
       let mut hammerRecommendation ← simpLemmasFromTacticStx i.info.stx
       hammerRecommendation ← rwLemmasFromTacticStx i.info.stx hammerRecommendation
@@ -409,7 +412,7 @@ def printTrainingDataGivenTheoremVal (elabDeclInfo : ElabDeclInfo) (module : Mod
     | throwError "trainingDataGivenTheoremVal :: Failed to build an mvar of type {vType}"
   let (_, m) ← m.introNP thmInfo.args.size
   let state ←
-    if useNaiveDataExtraction then
+    if useNaivePrettyPrinting then
       pure (← Meta.ppGoal m).pretty
     else
       pure (← withOptions (fun o => (o.set `pp.notation false).set `pp.fullNames true) $ Meta.ppGoal m).pretty
@@ -424,7 +427,7 @@ def printTrainingDataGivenTheoremVal (elabDeclInfo : ElabDeclInfo) (module : Mod
       termConstantsNameSet := termConstantsNameSet.append $ unfoldConstantName constName constantsMap Name.isAuxLemma
     let termConstants := termConstantsNameSet.toArray
     -- Filter `termConstants` to only included constants that are lemmas (i.e. Prop-typed) and not blacklisted
-    let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && (useNaiveDataExtraction || !isBlackListed s!"{n}")))
+    let termPremises ← termConstants.filterM (fun n => do pure ((← Name.isTheoremOrAxiom n) && (useNaiveBlacklist || !isBlackListed s!"{n}")))
     -- Every `SimpAllHint` should be `notInSimpAll` for term proofs
     let hammerRecommendation := Std.HashMap.ofList $ termPremises.toList.map (fun thm => (thm, SimpAllHint.notInSimpAll))
     match declHammerRecommendation with
